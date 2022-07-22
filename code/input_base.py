@@ -44,6 +44,7 @@ class BaseInputSimulation:
     @staticmethod
     def base_xml_headless_simulation(
             filename: str,
+            dengue_model_filename: str,
             build_filename: str,
             road_filename: str,
             shape_filename: str,
@@ -55,18 +56,18 @@ class BaseInputSimulation:
         xml_file = open(filename, 'w')
         xml_file.write("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>")
         xml_file.write("<Experiment_plan>")
-	    xml_file.write("<Simulation id=\"1\" sourcePath=\"./Dengue Propagation/models/Dengue Propagation.gaml\" finalStep=\"2\" experiment=\"explore_model\">")
-	    xml_file.write("<Parameters>")
-        xml_file.write("<Parameter var=\"build_filename\" type=\"STRING\" value=\"" + build_filename + "\" />")
-        xml_file.write("<Parameter var=\"road_filename\" type=\"STRING\" value=\"" + road_filename + "\" />")
-        xml_file.write("<Parameter var=\"shape_filename\" type=\"STRING\" value=\"" + shape_filename + "\" />")
-        xml_file.write("<Parameter var=\"mosquitoes_data_filename_inp\" type=\"STRING\" value=\"" + mosquitoes_filename + "\" />")
-        xml_file.write("<Parameter var=\"human_data_filename_inp\" type=\"STRING\" value=\"" + people_filename + "\" />")
-        xml_file.write("<Parameter var=\"mosquitoes_data_filename_otp\" type=\"STRING\" value=\"" + mosquitoes_output + "\" />")
-        xml_file.write("<Parameter var=\"human_data_filename_otp\" type=\"STRING\" value=\"" + people_output + "\" />")
-	    xml_file.write("</Parameters>")
-	    xml_file.write("</Simulation>")
-        xml_file.write("</Experiment_plan>")
+        xml_file.write("<Simulation id=\"1\" sourcePath=\"" + dengue_model_filename + "\" finalStep=\"2\" experiment=\"explore_model\">")
+        xml_file.write("<Parameters>\n")
+        xml_file.write("<Parameter var=\"build_filename\" type=\"STRING\" value=\"" + build_filename + "\" />\n")
+        xml_file.write("<Parameter var=\"road_filename\" type=\"STRING\" value=\"" + road_filename + "\" />\n")
+        xml_file.write("<Parameter var=\"shape_filename\" type=\"STRING\" value=\"" + shape_filename + "\" />\n")
+        xml_file.write("<Parameter var=\"mosquitoes_data_filename_inp\" type=\"STRING\" value=\"" + mosquitoes_filename + "\" />\n")
+        xml_file.write("<Parameter var=\"human_data_filename_inp\" type=\"STRING\" value=\"" + people_filename + "\" />\n")
+        xml_file.write("<Parameter var=\"mosquitoes_data_filename_otp\" type=\"STRING\" value=\"" + mosquitoes_output + "\" />\n")
+        xml_file.write("<Parameter var=\"human_data_filename_otp\" type=\"STRING\" value=\"" + people_output + "\" />\n")
+        xml_file.write("</Parameters>\n")
+        xml_file.write("</Simulation>\n")
+        xml_file.write("</Experiment_plan>\n")
 
         xml_file.close()
 
