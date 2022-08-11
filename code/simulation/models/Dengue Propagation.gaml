@@ -48,6 +48,12 @@ global {
 	// People parameters
 	float poeple_daily_recovery_rate <- 0.143;
 	
+	// Outbreaks parameters
+	float mosquitoes_oviposition_rate <- 0.2;
+	float eggs_to_mosquitoes <- 0.125;
+	int mosquitoes_max_carrying_capacity <- 3;
+	float aquatic_phase_mortality_rate <- 0.06;
+	
 	init {
 		//Initialization of the building using the shapefile of buildings
 		create building from: building_shapefile;
@@ -149,6 +155,7 @@ species people skills: [moving]{
 			// Check the mosquitoes state
 			if state = 2 and flip(proba){
 				myself.state <- 1;
+				break;
 			}
 		}
 	}
@@ -218,6 +225,26 @@ species mosquitoes skills: [moving] {
 		state <- 2;
 	}
 	
+	// Reflex to generate a new offspring
+	reflex oviposition when: flip(mosquitoes_oviposition_rate){
+		outbreaks selected_outbreak <- outbreaks at_distance(5 #m) closest_to(self);
+		selected_outbreak.eggs <- selected_outbreak.eggs + rnd(1, mosquitoes_max_carrying_capacity);
+		selected_outbreak.active <- true;
+
+//		TODO: change to generic values
+//		ask mosquitoes at_distance(2 #m) {
+//			if flip(1) {
+//				create mosquitoes number: rnd(1, 5) {
+//					starting_point <- myself.location;
+//					location <- starting_point;
+//					bounds <- circle(200, starting_point);
+//				}
+//				break;
+//			}
+//		}
+	}
+	
+	
 	aspect default {
 		if state = 0 {
 			draw circle(10) color: #blue;
@@ -229,12 +256,56 @@ species mosquitoes skills: [moving] {
 	}
 }
 
+// Species to represent the outbreaks points
+species outbreaks {
+	// Id
+	int id;
+	// Osmid
+	string osmid;
+	// Outbreak center
+	point location;
+	// This outbreak focus has eggs
+	bool active <- false;
+	// Number of eggs
+	int eggs <- 0;
+		
+	reflex adult_offspring when: every(12 #hour) and active = true {
+		if eggs > 0 {
+			int num_new_mosquitoes <- round(eggs_to_mosquitoes * eggs);
+			eggs_to_mosquitoes <- eggs_to_mosquitoes - num_new_mosquitoes;
+			
+			create mosquitoes number: num_new_mosquitoes {
+				starting_point <- any_location_in(one_of(road));
+				location <- starting_point;
+				bounds <- circle(200, myself.location);
+				state <- 1;
+			}	
+		} else {
+			active <- false;
+		}
+	}
+	
+	reflex aquatic_phase_death when: every(12 #hour) and active = true {
+		if eggs > 0 {
+			int aquatic_elimination <- round(aquatic_phase_mortality_rate * eggs);
+			eggs <- eggs - aquatic_elimination;
+		} 
+		if eggs <= 0 {
+			active <- false;
+		}
+	}
+	
+	
+		
+}
+
 //Species to represent the buildings
 species building {
 	aspect default {
 		draw shape color: #gray;
 	}
 }
+
 //Species to represent the roads
 species road {
 	// Osmid
@@ -254,3 +325,4 @@ experiment dengue_propagation type: gui {
 		}
 	}
 }
+
