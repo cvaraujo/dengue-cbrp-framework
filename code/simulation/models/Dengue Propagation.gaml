@@ -3,25 +3,34 @@
 * Author: Carlos Araújo
 * Description:
 * Tags: gis, shapefile, graph, skill, transport
-**/
+*/
 
 model DenguePropagation
 
 global {
-	//Shapefile of the buildings
-	file building_shapefile <- file("../includes/tabuleiro/buildings-tabuleiro.shp");
+	// Filename of buildings and roads
+	string building_filename <- "../includes/tabuleiro/buildings-tabuleiro.shp";
+	string road_filename <- "../includes/tabuleiro/roads-tabuleiro.shp";
+			
 	//Shapefile of the roads 
-	file road_shapefile <- file("../includes/tabuleiro/roads-tabuleiro.shp");
+	file road_shapefile <- file(road_filename);
+	//Shapefile of the buildings
+	file building_shapefile <- file(building_filename);
 	//Shape of the environment
 	geometry shape <- envelope(road_shapefile);
+
 	//Step value
 	float step <- 12 #h;
 	// CSV default data for the agents
-//	csv_file mosquitoes_data <- csv_file("../includes/mosquitoes.csv", ";", true);
-//	csv_file people_data <- csv_file("../includes/people.csv", ";", true);
-//	csv_file outbreaks_data <- csv_file("../includes/outbreaks.csv", ";", true);
+	string mosquitoes_csv_filename <- "mosquitoes.csv";
+	string people_csv_filename <- "people.csv";
+	string outbreaks_csv_filename <- "outbreaks.csv";
 	
-	//
+	string mosquitoes_csv_filename_output <- "mosquitoes.csv";
+	string people_csv_filename_output <- "people.csv";
+	string outbreaks_csv_filename_output <- "outbreaks.csv";
+	
+	// Simulation date
 	date start_date <- date("2022-01-01-05-00-00");
 	
 	// Work movimentation
@@ -45,48 +54,111 @@ global {
 	float mosquitoes_susceptibility_to_dengue <- 0.526;
 	float mosquitoes_death_rate <- 0.05;
 	
+	// Prabability of move
+	float mosquitoes_move_probability <- 0.5;
+	
 	// People parameters
 	float poeple_daily_recovery_rate <- 0.0143;
 	
 	// Outbreaks parameters
 	float mosquitoes_oviposition_rate <- 0.2;
 	float eggs_to_mosquitoes <- 0.125;
-	int mosquitoes_max_carrying_capacity <- 20;
+	int mosquitoes_max_carrying_capacity <- 3;
 	float aquatic_phase_mortality_rate <- 0.06;
 	
 	//
-	list<road> outbreak_points;
-	int nb_outbreaks <- 50;
+	list<road> outbreak_roads;
+	int nb_outbreaks <- 5;
+	
+	// 
+	int nb_people <- 5;
+	int nb_infected_people <- 0;
+	
+	//
+	int nb_mosquitoes <- 0;
+	int nb_infected_mosquitoes <- 3;
+	
+	//
+	float max_move_radius <- 200.0 #m;
+	
+	//
+	list<outbreaks> created_outbreaks;
 	
 	init {
+		if !file_exists(building_filename) or !file_exists(road_filename) {
+			do die;
+		}
+		
 		//Initialization of the building using the shapefile of buildings
 		create building from: building_shapefile;
 				
 		//Initialization of the road using the shapefile of roads
-		create road from: road_shapefile;
+		create road from: road_shapefile with: [osmid::string(read("osm_id"))];
 		
-		outbreak_points <- nb_outbreaks among road;
-		
-		create outbreaks number: nb_outbreaks {
-			location <- any_location_in(one_of(outbreak_points));
-			eggs <- rnd(1, 10);
-		}
-		//
-		create mosquitoes number: 2000 {
-			starting_point <- any_location_in(one_of(outbreak_points));
-			bounds <- circle(200, starting_point);
-			location <- any_location_in(bounds);
-			state <- flip(1) ? 2 : 0;
-		}
-		
-		create people number: 500 {
-			living_place <- one_of(road);
-			working_place <- one_of(road);
-			location <- any_location_in(living_place);
-			start_work <- rnd(min_work_start, max_work_start);
-			end_work <- rnd(min_work_end, max_work_end);
+		// Create the outbreaks species
+		if file_exists(outbreaks_csv_filename) {
+			csv_file outbreaks_data <- csv_file(outbreaks_csv_filename, ";", true);
+		} else {
+			outbreak_roads <- nb_outbreaks among road;
+			
+			create outbreaks number: nb_outbreaks returns: cr_outbreaks {
+				road_location <- one_of(outbreak_roads);
+				location <- any_location_in(road_location);
+				start_outbreak_roads <- road at_distance(1000 #m);
+				eggs <- rnd(1, 10) * mosquitoes_max_carrying_capacity;
+			}
+			
+//			created_outbreaks <- cr_outbreaks;
+//			write created_outbreaks;
 		}
 		
+		// Create the mosquitoes speciest
+		if file_exists(mosquitoes_csv_filename) {
+			csv_file mosquitoes_data <- csv_file(mosquitoes_csv_filename, ";", true);
+		} else {
+			create mosquitoes number: nb_infected_mosquitoes {
+				start_outbreak <- one_of(outbreaks);
+				bounds <- circle(max_move_radius, start_outbreak.location);
+				road_bounds <- start_outbreak.start_outbreak_roads;
+				current_road <- one_of(start_outbreak.start_outbreak_roads);
+				location <- any_location_in(current_road);
+				state <- 2;
+			}
+			
+			create mosquitoes number: nb_mosquitoes {
+				start_outbreak <- one_of(outbreaks);
+				bounds <- circle(max_move_radius, start_outbreak.location);
+				road_bounds <- start_outbreak.start_outbreak_roads;
+				current_road <- one_of(start_outbreak.start_outbreak_roads);
+				location <- any_location_in(current_road);
+				state <- 0;
+			}
+			
+		}
+		
+		// Create the people species
+		if file_exists(people_csv_filename) {
+			csv_file people_data <- csv_file(people_csv_filename, ";", true);
+		} else {
+			create people number: nb_people {
+				living_place <- one_of(road);
+				working_place <- one_of(road);
+				location <- any_location_in(living_place);
+				start_work <- rnd(min_work_start, max_work_start);
+				end_work <- rnd(min_work_end, max_work_end);
+				state <- 0;
+			}
+			
+			create people number: nb_infected_people {
+				living_place <- one_of(road);
+				working_place <- one_of(road);
+				location <- any_location_in(living_place);
+				start_work <- rnd(min_work_start, max_work_start);
+				end_work <- rnd(min_work_end, max_work_end);
+				state <- 1;
+			}
+		}
+				
 		// Creation of the people agents
 //		loop human over: people_data {
 //			list<string> line <- string(human) split_with ',';
@@ -114,6 +186,49 @@ global {
 //		}
 		
 	}
+}
+
+// Species to represent the outbreaks points
+species outbreaks {
+	// Id
+	int id;
+	// Outbreak center
+	point location;
+	// This outbreak focus has eggs
+	bool active <- true;
+	// Number of eggs
+	int eggs <- 0;
+	// Road
+	road road_location;
+	// Possible infested roads
+	list<road> start_outbreak_roads;
+		
+	reflex adult_offspring when: every(1 #cycles) and active = true {
+		if eggs > 0 {
+			int num_new_mosquitoes <- round(eggs_to_mosquitoes * eggs);
+			eggs <- eggs - num_new_mosquitoes;
+			
+			create mosquitoes number: num_new_mosquitoes {
+				start_outbreak <- myself;
+				bounds <- circle(max_move_radius, start_outbreak.location);
+				road_bounds <- start_outbreak.start_outbreak_roads;
+				current_road <- one_of(start_outbreak.start_outbreak_roads);
+				location <- any_location_in(current_road);
+				state <- 0;
+			}
+		}
+	}
+	
+	reflex aquatic_phase_death when: every(1 #cycles) and active = true {
+		if eggs > 0 {
+			int aquatic_elimination <- round(aquatic_phase_mortality_rate * eggs);
+			eggs <- eggs - aquatic_elimination;
+		} 
+	}
+	
+	aspect default {
+		draw circle(30) color: #black;
+	}		
 }
 
 // Species to represent the people using the skill moving
@@ -192,21 +307,25 @@ species mosquitoes skills: [moving] {
 	// Default speed of the agent
 	float speed <- (2 + rnd(5)) #km / #h;
 	// State of the agent (susceptible = 0, exposed = 1 or infected = 2)
-	int state;
-	// The initial point of the agent
-	point starting_point;
-	// Mooving radius
-	float max_move_radius <- 200.0 #m;
-	// Prabability of move
-	float move_probability <- 0.8;
+	int state <- 0;
 	// Target
 	point target;
-	// Mooving bounds
+	// Movement bounds
 	geometry bounds;
+	// Start outbreak location
+	outbreaks start_outbreak;
+	// Road bounds
+	list<road> road_bounds;
+	// Current road
+	road current_road;
 
 	// Reflex to stay in current location or select a random destination
-	reflex stay	when: (target = nil) and (flip(move_probability)) {
-		target <- any_location_in(bounds);
+	reflex stay	when: (target = nil) and (flip(mosquitoes_move_probability)) {
+		current_road <- one_of(road_bounds);
+		if current_road = nil {
+			write length(road_bounds);
+		}
+		target <- any_location_in(current_road);
 	}
 	
 	// Reflex to move
@@ -258,45 +377,6 @@ species mosquitoes skills: [moving] {
 	}
 }
 
-// Species to represent the outbreaks points
-species outbreaks {
-	// Id
-	int id;
-	// Osmid
-	string osmid;
-	// Outbreak center
-	point location;
-	// This outbreak focus has eggs
-	bool active <- true;
-	// Number of eggs
-	int eggs <- 0;
-		
-	reflex adult_offspring when: every(1 #cycles) and active = true {
-		if eggs > 0 {
-			int num_new_mosquitoes <- round(eggs_to_mosquitoes * eggs);
-			eggs <- eggs - num_new_mosquitoes;
-			
-			create mosquitoes number: num_new_mosquitoes {
-				starting_point <- any_location_in(one_of(road));
-				location <- starting_point;
-				bounds <- circle(200, myself.location);
-				state <- 0;
-			}
-		}
-	}
-	
-	reflex aquatic_phase_death when: every(1 #cycles) and active = true {
-		if eggs > 0 {
-			int aquatic_elimination <- round(aquatic_phase_mortality_rate * eggs);
-			eggs <- eggs - aquatic_elimination;
-		} 
-	}
-	
-	aspect default {
-		draw circle(30) color: #black;
-	}		
-}
-
 //Species to represent the buildings
 species building {
 	aspect default {
@@ -314,6 +394,21 @@ species road {
 }
 
 experiment dengue_propagation type: gui {
+	parameter "Shapefile for the buildings:" var: building_filename category: "string";
+	parameter "Shapefile for the roads:" var: road_filename category: "string";
+	parameter "Number of people agents" var: nb_people category: "human" init: 200;
+	parameter "Number of infected people agents" var: nb_infected_people category: "human" init: 100;
+	parameter "Number of mosquitoes agents" var: nb_mosquitoes category: "mosquitoes" init: 200;
+	parameter "Number of infected mosquitoes agents" var: nb_infected_mosquitoes category: "mosquitoes" init: 400;
+	parameter "Mosquitoes move probability" var: mosquitoes_move_probability category: "mosquitoes" init: 0.5;
+	parameter "Mosquitoes csv file" var: mosquitoes_csv_filename category: "string";
+	parameter "People csv file" var: people_csv_filename category: "string";
+	parameter "Outbreaks csv file" var: outbreaks_csv_filename category: "string";	
+	parameter "Mosquitoes csv output file" var: mosquitoes_csv_filename_output category: "string";
+	parameter "People csv output file" var: people_csv_filename_output category: "string";
+	parameter "Outbreaks csv output file" var: outbreaks_csv_filename_output category: "string";
+	parameter "Maximum radius" var: max_move_radius category: "mosquitoes" init: 200 #m;
+	
 	output {
 		display city type: opengl{
 			species building aspect: default ;
@@ -324,14 +419,52 @@ experiment dengue_propagation type: gui {
 		}
 		display chart refresh: every(1#cycles) axes: false {
 			chart "Mosquitoes" type: series background: #white style: exploded {
-//				data "New" value: mosquitoes count (each.state = 0) color: rgb(204,4,11);
-//				data "Susceptible" value: mosquitoes count (each.state = 1) color: rgb(46,204,113);
-//				data "infected" value: mosquitoes count (each.state = 2) color: rgb(231,76,60);	
-				data "New" value: people count (each.state = 0) color: rgb(204,4,11);
-				data "Infected People" value: people count (each.state = 1) color: rgb(52,152,219);
-				data "Recovered People" value: people count (each.state = 2) color: rgb(152,52,29);
+				data "New" value: mosquitoes count (each.state = 0) color: rgb(204,4,11);
+				data "Susceptible" value: mosquitoes count (each.state = 1) color: rgb(46,204,113);
+				data "infected" value: mosquitoes count (each.state = 2) color: rgb(231,76,60);	
+//				data "New" value: people count (each.state = 0) color: rgb(204,4,11);
+//				data "Infected People" value: people count (each.state = 1) color: rgb(52,152,219);
+//				data "Recovered People" value: people count (each.state = 2) color: rgb(152,52,29);
 			}
 		}
 	}
 }
+
+experiment headless_dengue_propagation type: batch until: cycle = 1 repeat: 1 {
+	parameter "Shapefile for the buildings:" var: building_filename category: "string";
+	parameter "Shapefile for the roads:" var: road_filename category: "string";
+	parameter "Number of people agents" var: nb_people category: "human" init: 20;
+	parameter "Number of infected people agents" var: nb_infected_people category: "human" init: 10;
+	parameter "Number of mosquitoes agents" var: nb_mosquitoes category: "mosquitoes" init: 20;
+	parameter "Number of infected mosquitoes agents" var: nb_infected_mosquitoes category: "mosquitoes" init: 20;
+	parameter "Mosquitoes move probability" var: mosquitoes_move_probability category: "mosquitoes" init: 0.5;
+	parameter "Mosquitoes csv file" var: mosquitoes_csv_filename category: "string";
+	parameter "People csv file" var: people_csv_filename category: "string";
+	parameter "Outbreaks csv file" var: outbreaks_csv_filename category: "string";	
+	parameter "Mosquitoes csv output file" var: mosquitoes_csv_filename_output <- "mosquitoes_" + 1 + ".csv";
+	parameter "People csv output file" var: people_csv_filename_output <- "people_" + 1 + ".csv";
+	parameter "Outbreaks csv output file" var: outbreaks_csv_filename_output <- "outbreaks_" + 1 + ".csv";
+	parameter "Maximum radius" var: max_move_radius category: "mosquitoes" init: 200 #m;
+	
+	reflex save_results {
+		ask mosquitoes {
+//			write [name, current_road];
+			save [name, id, speed, state, current_road.osmid, location.x, location.y] to: mosquitoes_csv_filename_output type: csv 
+			rewrite: (int(self) = 0) ? true : false header: true;
+		}
+
+		ask people {
+//			write [name, living_place.osmid, working_place.osmid];
+			save [name, id, speed, state, living_place.osmid, working_place.osmid, start_work, end_work, objective, location.x, location.y] to: people_csv_filename_output type: csv
+			rewrite: (int(self) = 0) ? true : false header: true;
+		}
+		
+		ask outbreaks {
+//			write [name, road_location.osmid];
+			save [name, id, active, eggs, road_location.osmid, location.x, location.y] to: outbreaks_csv_filename_output type: csv
+			rewrite: (int(self) = 0) ? true : false header: true;
+		}
+	}
+}
+
 
