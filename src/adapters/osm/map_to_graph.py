@@ -2,6 +2,7 @@ from domain.osm import OpenStreetMap
 from domain.graph import Graph
 from domain.arc import Arc
 from domain.node import Node
+import osmnx as ox
 import logging, os
 
 
@@ -33,6 +34,14 @@ class MapToGraph:
 
             return graph
         except Exception as ex:
-            print(ex)
             logging.info("[!] Error to convert the OSM map to Graph.")
+            return None
+
+    @staticmethod
+    def export_osm_to_shapefile(osm: OpenStreetMap, path: str) -> bool:
+        try:
+            ox.io.save_graph_shapefile(osm.osm_map, filepath=path, directed=True)
+            return True
+        except:
+            logging.info("[!] Error to save the shapefiles.")
             return None

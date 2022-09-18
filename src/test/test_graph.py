@@ -1,7 +1,7 @@
 import pytest
 from domain.graph import Graph
 from domain.osm import OpenStreetMap
-from adapters.osm.map_to_graph import MapToGraph
+from adapters.osm.map_to_graph import *
 
 
 # test graph
@@ -20,6 +20,11 @@ def osm():
 def test_osm_graph_conversion(osm):
     osm.load_map()
     assert MapToGraph.convert_osm_to_graph(osm) is not None
+
+
+def test_osm_shapefile_export(osm):
+    osm.load_map()
+    assert MapToGraph.export_osm_to_shapefile(osm, "temp/shp") is True
 
 
 def test_create_blocks(osm):

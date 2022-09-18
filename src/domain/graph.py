@@ -161,6 +161,9 @@ class Graph:
                 return k
         return -1
 
+    def get_edge_by_key(self, key: int):
+        pass
+
     @property
     def nodes(self):
         return self._nodes
