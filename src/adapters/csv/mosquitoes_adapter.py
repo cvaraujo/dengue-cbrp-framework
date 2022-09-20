@@ -19,28 +19,7 @@ class MosquitoesAdapter:
             df = pd.read_csv(filename, sep=";")
 
             for _, row in df.iterrows():
-                id = row["id"]
-                current_road = graph.get_edge_by_key(row["current_road.id_key"])
-                outbreak_id = row["start_outbreak.id"]
-
-                # Check if the outbreak_id exists
-                if outbreak_id in self._selected_outbreaks:
-                    outbreak = self._selected_outbreaks[outbreak_id]
-                else:
-                    outbreak = outbreaks.get_outbreak_by_id(outbreak_id)
-                    self._selected_outbreaks[outbreak_id] = outbreak
-
-                new_mosquito = Mosquito(
-                    row["name"],
-                    id,
-                    row["speed"],
-                    row["state"],
-                    current_road,
-                    outbreak,
-                    (row["location.x"], row["location.y"]),
-                )
-                self._mosquitoes[id] = new_mosquito
-                self._n += 1
+                self.create_mosquito_from_row(row)
         except:
             return None
 
@@ -68,11 +47,11 @@ class MosquitoesAdapter:
         try:
             df = pd.read_csv(filename, sep=";")
             for _, row in df.iterrows():
-                # Get the Person
-                id = row["id"]
-                current_road = graph.get_edge_by_key(row["current_road.id_key"])
                 if id in self._mosquitoes:
+                    id = row["id"]
+                    current_road = graph.get_edge_by_key(row["current_road.id_key"])
                     mosquito = self._mosquitoes[id]
+
                     # Get the attributes that can change
                     state = int(row["state"])
 
@@ -82,25 +61,30 @@ class MosquitoesAdapter:
                     mosquito.current_road = current_road
                     mosquito.location = location
                 else:
-                    outbreak_id = row["start_outbreak.id"]
-
-                    # Check if the outbreak_id exists
-                    if outbreak_id in self._selected_outbreaks:
-                        outbreak = self._selected_outbreaks[outbreak_id]
-                    else:
-                        outbreak = outbreaks.get_outbreak_by_id(outbreak_id)
-                        self._selected_outbreaks[outbreak_id] = outbreak
-
-                    new_mosquito = Mosquito(
-                        row["name"],
-                        id,
-                        row["speed"],
-                        row["state"],
-                        current_road,
-                        outbreak,
-                        (row["location.x"], row["location.y"]),
-                    )
-                    self._mosquitoes[id] = new_mosquito
-                    self._n += 1
+                    self.create_mosquito_from_row(row)
         except:
             return None
+
+    def create_mosquito_from_row(self, row: pd.Series):
+        id = row["id"]
+        current_road = graph.get_edge_by_key(row["current_road.id_key"])
+        outbreak_id = row["start_outbreak.id"]
+
+        # Check if the outbreak_id exists
+        if outbreak_id in self._selected_outbreaks:
+            outbreak = self._selected_outbreaks[outbreak_id]
+        else:
+            outbreak = outbreaks.get_outbreak_by_id(outbreak_id)
+            self._selected_outbreaks[outbreak_id] = outbreak
+
+        new_mosquito = Mosquito(
+            row["name"],
+            id,
+            row["speed"],
+            row["state"],
+            current_road,
+            outbreak,
+            (row["location.x"], row["location.y"]),
+        )
+        self._mosquitoes[id] = new_mosquito
+        self._n += 1
