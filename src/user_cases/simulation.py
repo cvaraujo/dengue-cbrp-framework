@@ -51,6 +51,7 @@ class Simulation:
                     path.abspath(path.join(self._shapefile_folder, "edges.shp")),
                 ),
                 "nb_people": ("INT", self._num_people),
+                "nb_outbreaks": ("INT", self._num_outbreaks),
                 "nb_infected_people": ("INT", self._num_infected_people),
                 "nb_mosquitoes": ("INT", self._num_mosquitoes),
                 "nb_infected_mosquitoes": ("INT", self._num_infected_mosquitoes),
