@@ -3,5 +3,5 @@
     "python.formatting.provider": "black",
     "editor.formatOnSave": true,
     "python.linting.enabled": true,
-    "python.envFile": "${workspaceFolder}/.env"
+    "python.analysis.autoImportCompletions": true,
 }
