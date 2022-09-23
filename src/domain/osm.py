@@ -45,8 +45,10 @@ class OpenStreetMap:
         self._osm_map = None
         self._latitude = 0.0
         self._longitude = 0.0
+        self._load_map()
+        self._add_edge_key_attribute()
 
-    def load_map(self):
+    def _load_map(self):
         """Load the map from de inserted addres and radius, saving also
         the values of latitude and longitude.
 
@@ -78,7 +80,7 @@ class OpenStreetMap:
             logging.info("[!] Error to plot the map.")
             raise Exception("Plot map error.")
 
-    def add_edge_key_attribute(self):
+    def _add_edge_key_attribute(self):
         """Add a new key attribute in the map streets.
         This attribute is important to convert OpenStreetMap
         objects to Graph objects.

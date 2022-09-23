@@ -6,7 +6,6 @@ from os import path
 class Simulation:
     def __init__(
         self,
-        id: str,
         num_people: int,
         num_infected_people: int,
         num_mosquitoes: int,
@@ -15,6 +14,7 @@ class Simulation:
         shapefile_folder: str,
         headless_file: str,
         num_cycles: int,
+        id=0,
         model="dengue_propagation.gaml",
         experiment="headless_dengue_propagation",
         scenario="endemic",
@@ -34,14 +34,14 @@ class Simulation:
 
     def _prepare_environment(self):
         try:
-            head = {
-                "id": self._id,
+            self._head = {
+                "id": str(self._id),
                 "final_step": self._num_cycles,
                 "model": path.abspath(path.join("simulation/models", self._model)),
                 "experiment": self._experiment,
             }
 
-            parameters = {
+            self._parameters = {
                 "building_filename": (
                     "STRING",
                     path.abspath(path.join(self._shapefile_folder, "nodes.shp")),
@@ -61,7 +61,7 @@ class Simulation:
                     path.abspath(
                         path.join(
                             "temp/simulation_states",
-                            "mosquitoes_" + self._id + ".csv",
+                            "mosquitoes_" + str(self._id) + ".csv",
                         )
                     ),
                 ),
@@ -70,7 +70,7 @@ class Simulation:
                     path.abspath(
                         path.join(
                             "temp/simulation_states",
-                            "people_" + self._id + ".csv",
+                            "people_" + str(self._id) + ".csv",
                         )
                     ),
                 ),
@@ -79,7 +79,7 @@ class Simulation:
                     path.abspath(
                         path.join(
                             "temp/simulation_states",
-                            "outbreaks_" + self._id + ".csv",
+                            "outbreaks_" + str(self._id) + ".csv",
                         )
                     ),
                 ),
@@ -88,7 +88,7 @@ class Simulation:
                     path.abspath(
                         path.join(
                             "temp/simulation_states",
-                            "mosquitoes_" + str(int(self._id) + 1) + ".csv",
+                            "mosquitoes_" + str(self._id + 1) + ".csv",
                         )
                     ),
                 ),
@@ -97,7 +97,7 @@ class Simulation:
                     path.abspath(
                         path.join(
                             "temp/simulation_states",
-                            "people_" + str(int(self._id) + 1) + ".csv",
+                            "people_" + str(self._id + 1) + ".csv",
                         )
                     ),
                 ),
@@ -106,27 +106,110 @@ class Simulation:
                     path.abspath(
                         path.join(
                             "temp/simulation_states",
-                            "outbreaks_" + str(int(self._id) + 1) + ".csv",
+                            "outbreaks_" + str(self._id + 1) + ".csv",
                         )
                     ),
                 ),
             }
+
             self._headless_file = path.abspath(
                 path.join(
                     "temp/simulation_states",
-                    self._headless_file + "_" + self._id + ".xml",
+                    self._headless_file + ".xml",
                 )
             )
 
+            self._id += 1
+
             XmlSimulationAdapter.create_xml_headless_simulation(
-                self._headless_file, head, parameters
+                self._headless_file, self._head, self._parameters
+            )
+        except Exception as ex:
+            print(ex)
+
+    def _continuous_run(self):
+        try:
+            self._head["id"] = self._id
+
+            self._parameters = {
+                "building_filename": (
+                    "STRING",
+                    path.abspath(path.join(self._shapefile_folder, "nodes.shp")),
+                ),
+                "road_filename": (
+                    "STRING",
+                    path.abspath(path.join(self._shapefile_folder, "edges.shp")),
+                ),
+                "mosquitoes_csv_filename": (
+                    "STRING",
+                    path.abspath(
+                        path.join(
+                            "temp/simulation_states",
+                            "mosquitoes_" + str(self._id) + ".csv",
+                        )
+                    ),
+                ),
+                "people_csv_filename": (
+                    "STRING",
+                    path.abspath(
+                        path.join(
+                            "temp/simulation_states",
+                            "people_" + str(self._id) + ".csv",
+                        )
+                    ),
+                ),
+                "outbreaks_csv_filename": (
+                    "STRING",
+                    path.abspath(
+                        path.join(
+                            "temp/simulation_states",
+                            "outbreaks_" + str(self._id) + ".csv",
+                        )
+                    ),
+                ),
+                "mosquitoes_csv_filename_output": (
+                    "STRING",
+                    path.abspath(
+                        path.join(
+                            "temp/simulation_states",
+                            "mosquitoes_" + str(self._id + 1) + ".csv",
+                        )
+                    ),
+                ),
+                "people_csv_filename_output": (
+                    "STRING",
+                    path.abspath(
+                        path.join(
+                            "temp/simulation_states",
+                            "people_" + str(self._id + 1) + ".csv",
+                        )
+                    ),
+                ),
+                "outbreaks_csv_filename_output": (
+                    "STRING",
+                    path.abspath(
+                        path.join(
+                            "temp/simulation_states",
+                            "outbreaks_" + str(self._id + 1) + ".csv",
+                        )
+                    ),
+                ),
+            }
+
+            self._id += 1
+
+            XmlSimulationAdapter.create_xml_headless_simulation(
+                self._headless_file, self._head, self._parameters
             )
         except Exception as ex:
             print(ex)
 
     def run(self) -> bool:
         try:
-            self._prepare_environment()
+            if self._id < 1:
+                self._prepare_environment()
+            else:
+                self._continuous_run()
 
             command = (
                 "bash /opt/gama-1.8.2/headless/gama-headless.sh -v "
