@@ -4,6 +4,7 @@ from domain.arc import Arc
 from domain.node import Node
 import osmnx as ox
 import logging, os
+from pathlib import Path
 
 
 class MapToGraph:
@@ -40,6 +41,7 @@ class MapToGraph:
     @staticmethod
     def export_osm_to_shapefile(osm: OpenStreetMap, path: str) -> bool:
         try:
+            Path(path).mkdir(parents=True, exist_ok=True)
             ox.io.save_graph_shapefile(osm.osm_map, filepath=path, directed=True)
             return True
         except:

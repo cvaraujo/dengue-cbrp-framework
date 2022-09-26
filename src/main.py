@@ -3,7 +3,12 @@ from use_cases.simulation import Simulation
 from adapters.osm.map_adapter import MapToGraph
 from domain.osm import OpenStreetMap
 from domain.graph import Graph
+import logging
+import osmnx as ox
+import warnings
 
+ox.settings.use_cache = True
+logging.basicConfig(filename="temp/example.log", encoding="utf-8", level=logging.DEBUG)
 
 if __name__ == "__main__":
     # OpenStreetMap
@@ -27,3 +32,6 @@ if __name__ == "__main__":
     # Run
     for _ in range(2):
         simulation.run()
+
+    # Clear environment
+    # simulation.clear()

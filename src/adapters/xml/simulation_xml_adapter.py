@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 
 class XmlSimulationAdapter:
@@ -8,6 +9,7 @@ class XmlSimulationAdapter:
         head: dict,
         parameters: dict,
     ):
+
         xml_file = open(filename, "w")
 
         # Basic simulation parameters

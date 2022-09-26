@@ -1,6 +1,7 @@
 from adapters.xml.simulation_xml_adapter import XmlSimulationAdapter
 import os, subprocess
 from os import path
+from pathlib import Path
 
 
 class Simulation:
@@ -119,6 +120,10 @@ class Simulation:
                 )
             )
 
+            Path(path.abspath("temp/simulation_states")).mkdir(
+                parents=True, exist_ok=True
+            )
+
             self._id += 1
 
             XmlSimulationAdapter.create_xml_headless_simulation(
@@ -217,11 +222,36 @@ class Simulation:
                 + " "
                 + path.abspath("temp/simulation_outputs")
             )
-            print(command)
+
             p = subprocess.Popen(
                 command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
             )
             msg, _ = p.communicate()
+
+            if msg:
+                return True
+        except Exception as ex:
+            print(ex)
+            return False
+
+    def clear(self):
+        try:
+            command = (
+                "rm -rf  "
+                + path.abspath("temp/simulation_outputs")
+                + "/* "
+                + path.abspath("temp/simulation_states")
+                + "/* "
+                + path.abspath("temp/shp")
+                + "/* "
+            )
+
+            p = subprocess.Popen(
+                command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+            )
+
+            msg, _ = p.communicate()
+
             if msg:
                 return True
         except Exception as ex:

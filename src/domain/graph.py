@@ -162,7 +162,15 @@ class Graph:
         return -1
 
     def get_edge_by_key(self, key: int):
-        pass
+        # If the key has already been searched
+        if key in self._key_arc_map:
+            return self._key_arc_map[key]
+
+        # New key
+        for arc in self_arcs:
+            if arc.key == key:
+                self._key_arc_map[key] = arc
+                return arc
 
     @property
     def nodes(self):
