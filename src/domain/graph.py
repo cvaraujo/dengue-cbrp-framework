@@ -5,19 +5,21 @@ from domain.node import Node
 from domain.utils import *
 from typing import List, Dict
 import logging
+from time import sleep
 
 
 class Graph:
-    def __init__(self, plot=False):
+    def __init__(self, osmnx_graph=None, plot=False):
         self._nodes = []
         self._arcs = []
-        self._osmnx_graph = None
+        self._osmnx_graph = osmnx_graph
         self._n = 0
         self._m = 0
         self._b = 0
         self._key_arc_map = dict()
         self._osmid_node_map = dict()
         self._block_nodes = dict()
+        self._block_arcs = dict()
         self.plot = plot
 
     def add_osm_node(self, node: Node):
@@ -57,61 +59,20 @@ class Graph:
         self._key_arc_map[self._m] = new_arc
         self._m += 1
 
-    def _get_sequence(
-        self, start_point: int, S: List, ch_nodes: List, cycles: List, used_arcs: Dict
-    ):
-        nodes = self._nodes
-        u_ = S[start_point]
-
-        # Get the adjacent points in convex hull
-        adj_u = [v.target for v in self._arcs[u_.index] if v.target in ch_nodes]
-
-        # Get the third node
-        for v in adj_u:
-            v_ = self._nodes[v]
-            adj_v = [
-                k.target
-                for k in self._arcs[v]
-                if (k.target in ch_nodes) and (k.target != u_.index)
-            ]
-
-            #
-            for k in adj_v:
-                k_ = self._nodes[k]
-                # Compute the determinant
-                det = (v_.lon - u_.lon) * (k_.lat - u_.lat) - (k_.lon - u_.lon) * (
-                    v_.lat - u_.lat
-                )
-
-                # Return the clockwise order
-                if det < 0:
-                    temp_block = Utils.get_directed_block(
-                        u_.index,
-                        v_.index,
-                        k_.index,
-                        cycles,
-                        self._n,
-                        self._arcs,
-                        used_arcs,
-                    )
-                else:
-                    temp_block = Utils.get_directed_block(
-                        k_.index,
-                        v_.index,
-                        u_.index,
-                        cycles,
-                        self._n,
-                        self._arcs,
-                        used_arcs,
-                    )
-
-                if len(temp_block) > 0:
-                    return temp_block
-        return None
-
-    def create_blocks(self):
+    def set_edge_blocks(self):
         used_arcs = dict()
         n = self._n
+
+        # Complete the graph
+        arcs_ = [[] for _ in range(n)]
+        for i in range(n):
+            for arc in self._arcs[i]:
+                # Copy
+                arcs_[i].append(arc)
+                if arc.oneway:
+                    rev_arc = copy(arc)
+                    rev_arc.source, rev_arc.target = arc.target, arc.source
+                    arcs_[arc.target].append(rev_arc)
 
         # Fill the used arcs with False
         for i in range(n):
@@ -119,47 +80,51 @@ class Graph:
                 used_arcs[(i, j.target)] = False
 
         # compute the set of cicles
-        cycles = Utils.compute_faces(self._nodes, self._arcs)
+        valid_faces = Utils.compute_faces(self._nodes, arcs_)
+        invalid_faces = []
 
-        for key in cycles.keys():
-            # Compute the CH
-            S = Utils.get_convex_hull(key, self._nodes, cycles)
+        # Get the valid face arcs
+        self._b = 0
+        for face in valid_faces:
+            face_arcs = [
+                (face[i - 1], face[i])
+                for i in range(1, len(face))
+                if (face[i - 1], face[i]) in used_arcs
+            ]
+            if (face[-1], face[0]) in used_arcs:
+                face_arcs.append((face[-1], face[0]))
 
-            # Ignoring cycles of size 2
-            if len(S) <= 2:
-                continue
+            if len(face_arcs) == len(face):
+                self._block_nodes[self._b] = face_arcs
+                self._b += 1
+                for arc in face_arcs:
+                    used_arcs[arc] = True
+            else:
+                invalid_faces.append(face)
 
-            start_point = 0
-            oriented_block = []
-            ch_nodes = [node.index for node in S]
-
-            while start_point < len(S) - 2:
-                new_block = self._get_sequence(
-                    start_point, S, ch_nodes, cycles[key], used_arcs
-                )
-                # Valid face
-                if new_block is not None:
-                    self._block_nodes[self._b] = new_block
-                    self._b += 1
-                    for arc_pair in new_block:
-                        used_arcs[(arc_pair[0], arc_pair[1])] = True
-                    break
-                start_point += 1
+        # Invalid faces
+        invalid_faces = sorted(invalid_faces, key=lambda x: len(x), reverse=True)
+        for face in invalid_faces:
+            face_arcs = Utils.get_cycle(n, face, self._arcs, used_arcs)
+            if len(face_arcs) > 0:
+                self._block_nodes[self._b] = face_arcs
+                self._b += 1
+                for arc in face_arcs:
+                    used_arcs[arc] = True
 
         # set the blocks
         for key in self._block_nodes.keys():
-            print(self._block_nodes[key])
             for pair in self._block_nodes[key]:
                 i, j = pair[0], pair[1]
                 self._nodes[i].add_block(key)
                 self._nodes[j].add_block(key)
                 self._arcs[i][self.get_edge(i, j)].block = key
 
-    def get_edge(self, i, j):
+    def get_edge(self, i: int, j: int) -> int:
         for k in range(len(self._arcs[i])):
             if self._arcs[i][k].target == j:
                 return k
-        return -1
+        return None
 
     def get_edge_by_key(self, key: int):
         # If the key has already been searched
@@ -171,6 +136,31 @@ class Graph:
             if arc.key == key:
                 self._key_arc_map[key] = arc
                 return arc
+
+    def plot_graph(self):
+        graph = self._osmnx_graph.osm_map
+        colors = ["r", "g", "b", "c"]
+        n_route = []
+        route = []
+
+        for block in self._block_nodes.keys():
+            # route = []
+            print(self._block_nodes[block])
+            for arc in self._block_nodes[block]:
+                route.append([self._nodes[arc[0]].osmid, self._nodes[arc[1]].osmid])
+
+        if len(route) > 0:
+            try:
+                ox.plot.plot_graph_routes(
+                    graph,
+                    route,
+                    route_colors=[colors[i % len(colors)] for i in range(len(route))],
+                    save=True,
+                    filepath="faces.png",
+                )
+                n_route += route
+            except Exception as e:
+                print(e)
 
     @property
     def nodes(self):

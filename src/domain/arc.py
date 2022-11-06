@@ -30,9 +30,17 @@ class Arc:
     def source(self):
         return self._source
 
+    @source.setter
+    def source(self, value):
+        self._source = value
+
     @property
     def target(self):
         return self._target
+
+    @target.setter
+    def target(self, value):
+        self._target = value
 
     @property
     def block(self):

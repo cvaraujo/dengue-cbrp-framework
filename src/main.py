@@ -1,14 +1,15 @@
 from os import path
 from use_cases.simulation import Simulation
-from adapters.osm.map_adapter import MapToGraph
+from adapters.osm.map_adapter import MapAdapter
 from domain.osm import OpenStreetMap
 from domain.graph import Graph
 import logging
 import osmnx as ox
 import warnings
+import networkx as nx
 
 ox.settings.use_cache = True
-logging.basicConfig(filename="temp/example.log", encoding="utf-8", level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 if __name__ == "__main__":
     # OpenStreetMap
