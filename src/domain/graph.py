@@ -1,203 +1,110 @@
+from typing import Dict, List, Tuple, Set, Optional
 import osmnx as ox
-import networkx as nx
-from domain.arc import Arc
-from domain.node import Node
-from domain.utils import *
-from typing import List, Dict
-import logging
-from time import sleep
-
+from domain.node import *
+from domain.arc import *
 
 class Graph:
-    def __init__(self, osmnx_graph=None, plot=False):
-        self._nodes = []
-        self._arcs = []
-        self._osmnx_graph = osmnx_graph
-        self._n = 0
-        self._m = 0
-        self._b = 0
-        self._key_arc_map = dict()
-        self._osmid_node_map = dict()
-        self._block_nodes = dict()
-        self._block_arcs = dict()
-        self.plot = plot
+    def __init__(self):
+        self.n: int = 0
+        self.m: int = 0
+        self.b: int = 0
+        self.key_arc_map: Dict[int, Arc] = {}
+        self.osmid_node_map: Dict[str, Node] = {}
+        self.block_nodes: Dict[int, List[int]] = {}
+        self.block_pairs: Dict[int, List[Tuple[int, int]]] = {}
+        self.block_arcs: Dict[int, List[Arc]] = {}
+        self.nodes: Dict[int, Node] = {}
+        self.arcs: Dict[int, List[Arc]] = {}
+        self.plot: bool = False
 
     def add_osm_node(self, node: Node):
-        self._nodes.append(node)
-        self._osmid_node_map[node.osmid] = node
-        self._n += 1
+        self.n += 1
+        self.nodes[node.index] = node
+        self.osmid_node_map[node.osmid] = node
 
-    def add_osm_arc(self, arc: List):
-        source = self._osmid_node_map[arc[0]].index
-        target = self._osmid_node_map[arc[1]].index
-        arc_dict = arc[2]
+    def add_osm_arc(self, arc_tuple: Tuple[int, int, dict], with_two_ways: bool = True) -> bool:
+        source_id, target_id, arc_data = arc_tuple
+        source = self.osmid_node_map[str(source_id)]
+        target = self.osmid_node_map[str(target_id)]
 
-        # Ignore self loop
-        if source == target:
-            return
+        if source.index == target.index or target.index in [a.target.index for a in self.arcs[source.index]]:
+            return False
 
-        # Treating empty parameters
-        name = arc_dict["name"] if "name" in arc_dict else ""
-        oneway = arc_dict["oneway"] if "oneway" in arc_dict else False
-        osmid = arc_dict["osmid"] if "osmid" in arc_dict else ""
-        length = arc_dict["length"] if "length" in arc_dict else 0.0
-        id_key = arc_dict["id_key"] if "id_key" in arc_dict else -1
+        name = str(arc_data.get("name", ""))
+        oneway = arc_data.get("oneway", False) if not with_two_ways else False
+        osmid = str(arc_data.get("osmid", ""))
+        length = arc_data.get("length", 0.0)
+        id_key = arc_data.get("id_key", -1)
 
-        # Create a new arc
-        new_arc = Arc(
-            osmid,
-            oneway,
-            name,
-            length,
-            source,
-            target,
-            id_key,
-        )
+        new_arc = Arc(osmid, oneway, name, length, source, target, id_key)
+        self.arcs[source.index].append(new_arc)
+        self.key_arc_map[id_key] = new_arc
+        self.m += 1
 
-        # Add new arc and map the id
-        self._arcs[source].append(new_arc)
-        self._key_arc_map[self._m] = new_arc
-        self._m += 1
+        if with_two_ways:
+            rev_key = id_key + 1 if id_key != -1 else -1
+            rev_arc = Arc(osmid, False, name, length, target, source, rev_key)
+            self.arcs[target.index].append(rev_arc)
+            self.key_arc_map[rev_key] = rev_arc
+            self.m += 1
 
-    def set_edge_blocks(self):
-        used_arcs = dict()
-        n = self._n
+        return True
 
-        # Complete the graph
-        arcs_ = [[] for _ in range(n)]
-        for i in range(n):
-            for arc in self._arcs[i]:
-                # Copy
-                arcs_[i].append(arc)
-                if arc.oneway:
-                    rev_arc = copy(arc)
-                    rev_arc.source, rev_arc.target = arc.target, arc.source
-                    arcs_[arc.target].append(rev_arc)
+    def get_arc_block_from_osmid_nodes(self, source: str, target: str) -> int:
+        source_node = self.osmid_node_map[source]
+        target_node = self.osmid_node_map[target]
 
-        # Fill the used arcs with False
-        for i in range(n):
-            for j in self._arcs[i]:
-                used_arcs[(i, j.target)] = False
+        for arc in self.arcs[source_node.index]:
+            if arc.target.index == target_node.index:
+                return arc.block
+        return -1
 
-        # compute the set of cicles
-        valid_faces = Utils.compute_faces(self._nodes, arcs_)
-        invalid_faces = []
+    def get_arc_index(self, source: int, target: int) -> int:
+        if source >= len(self.arcs):
+            return -1
+        
+        for i, arc in enumerate(self.arcs[source]):
+            if arc.target.index == target:
+                return i
+        return -1
 
-        # Get the valid face arcs
-        self._b = 0
-        for face in valid_faces:
-            face_arcs = [
-                (face[i - 1], face[i])
-                for i in range(1, len(face))
-                if (face[i - 1], face[i]) in used_arcs
-            ]
-            if (face[-1], face[0]) in used_arcs:
-                face_arcs.append((face[-1], face[0]))
-
-            if len(face_arcs) == len(face):
-                self._block_nodes[self._b] = face_arcs
-                self._b += 1
-                for arc in face_arcs:
-                    used_arcs[arc] = True
-            else:
-                invalid_faces.append(face)
-
-        # Invalid faces
-        invalid_faces = sorted(invalid_faces, key=lambda x: len(x), reverse=True)
-        for face in invalid_faces:
-            face_arcs = Utils.get_cycle(n, face, self._arcs, used_arcs)
-            if len(face_arcs) > 0:
-                self._block_nodes[self._b] = face_arcs
-                self._b += 1
-                for arc in face_arcs:
-                    used_arcs[arc] = True
-
-        # set the blocks
-        for key in self._block_nodes.keys():
-            for pair in self._block_nodes[key]:
-                i, j = pair[0], pair[1]
-                self._nodes[i].add_block(key)
-                self._nodes[j].add_block(key)
-                self._arcs[i][self.get_edge(i, j)].block = key
-
-    def get_edge(self, i: int, j: int) -> int:
-        for k in range(len(self._arcs[i])):
-            if self._arcs[i][k].target == j:
-                return k
+    def get_arc(self, source: int, target: int) -> Optional[Arc]:
+        for arc in self.arcs.get(source, []):
+            if arc.target.index == target:
+                return arc
         return None
 
-    def get_edge_by_key(self, key: int):
-        # If the key has already been searched
-        if key in self._key_arc_map:
-            return self._key_arc_map[key]
+    # N1, N4, 
+    def print_graph(self):
+        print("Number of nodes: ", self.n)
+        print("Number of arcs: ", self.m)
+        print("Number of blocks: ", self.b)
 
-        # New key
-        for arc in self_arcs:
-            if arc.key == key:
-                self._key_arc_map[key] = arc
-                return arc
+        for i in range(self.n):
+            print(f"Node {i}: {self.nodes[i].index} = {self.nodes[i].get_blocks()}")
 
-    def plot_graph(self):
-        graph = self._osmnx_graph.osm_map
+        for i in range(self.n):
+            for j in range(len(self.arcs[i])):
+                print(f"Arc {i} -> {self.arcs[i][j].target.index}: {self.arcs[i][j].block} = {self.arcs[i][j].length}")
+
+    def plot_graph(self, osm):
+        g = osm.osm_map
         colors = ["r", "g", "b", "c"]
-        n_route = []
         route = []
 
-        for block in self._block_nodes.keys():
-            # route = []
-            print(self._block_nodes[block])
-            for arc in self._block_nodes[block]:
-                route.append([self._nodes[arc[0]].osmid, self._nodes[arc[1]].osmid])
+        for b in range(1, self.b + 1):
+            dirgrassa = []
+            for i, j in self.block_pairs.get(b, []):
+                dirgrassa.append((i, j))
+                route.append([int(self.nodes[i].osmid), int(self.nodes[j].osmid)])
+            print(dirgrassa)
 
-        if len(route) > 0:
-            try:
-                ox.plot.plot_graph_routes(
-                    graph,
-                    route,
-                    route_colors=[colors[i % len(colors)] for i in range(len(route))],
-                    save=True,
-                    filepath="faces.png",
-                )
-                n_route += route
-            except Exception as e:
-                print(e)
-
-    @property
-    def nodes(self):
-        return self._nodes
-
-    @nodes.setter
-    def nodes(self, value):
-        self._nodes = value
-
-    @property
-    def arcs(self):
-        return self._arcs
-
-    @arcs.setter
-    def arcs(self, value):
-        self._arcs = value
-
-    @property
-    def n(self):
-        return self._n
-
-    @n.setter
-    def n(self, value):
-        self._n = value
-
-    @property
-    def m(self):
-        return self._m
-
-    @m.setter
-    def m(self, value):
-        self._m = value
-
-    @property
-    def b(self):
-        return self._b
-
-    @b.setter
-    def b(self, value):
-        self._b = value
+        try:
+            ox.plot.plot_graph_routes(
+                g,
+                route,
+                route_colors=[colors[(i % len(colors))] for i in range(len(route))],
+                save=False,
+            )
+        except Exception as e:
+            print(e)

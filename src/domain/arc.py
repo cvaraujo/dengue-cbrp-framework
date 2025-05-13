@@ -1,18 +1,25 @@
+from domain.node import Node
+
 class Arc:
-    def __init__(self, osmid, oneway, name, length, source, target, key, block=-1):
-        self._osmid = osmid
-        self._oneway = oneway
-        self._name = name
-        self._length = length
-        self._source = source
-        self._target = target
-        self._block = block
-        self._cases = 0
-        self._key = key
+    def __init__(self, osmid: str, oneway: bool, name: str, length: float,
+                 source: Node, target: Node, key: int, block: int = -1, cases: int = 0):
+        self._block: int = block
+        self._cases: int = cases
+        self._osmid: str = osmid
+        self._oneway: bool = oneway
+        self._name: str = name
+        self._length: float = length
+        self._source: Node = source
+        self._target: Node = target
+        self._key: int = key
 
     @property
     def osmid(self):
         return self._osmid
+
+    @property
+    def osmid(self, value: str):
+        self._osmid = value
 
     @property
     def oneway(self):

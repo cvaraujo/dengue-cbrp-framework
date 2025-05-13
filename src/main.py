@@ -1,5 +1,5 @@
-from use_cases.simulation import Simulation
-from use_cases.instance_generator import InstanceGenerator
+# from use_cases.simulation import Simulation
+# from use_cases.instance_generator import InstanceGenerator
 from adapters.osm.map_adapter import MapAdapter
 from domain.osm import OpenStreetMap
 from domain.graph import Graph
@@ -9,31 +9,35 @@ from os import path
 import networkx as nx
 
 ox.settings.use_cache = True
+# ox.settings.all_oneway = True
 logging.basicConfig(level=logging.INFO)
 
 if __name__ == "__main__":
+    osm_map: OpenStreetMap = OpenStreetMap("Alto Santo, Ceará", 1000)
+    graph: Graph = MapAdapter.convert_osm_to_graph(osm_map, True)
+
     # OpenStreetMap
-    osm_map = OpenStreetMap("Limoeiro do Norte, Ceará", 300)
-    # Graph
-    graph = MapAdapter.convert_osm_to_graph(osm_map)
-    # Shapefile
-    shp_folder = path.abspath("temp/shp/as")
-    MapAdapter.export_osm_to_shapefile(osm_map, shp_folder)
-    # Simulation
-    simulation = Simulation(
-        50,
-        10,
-        200,
-        200,
-        50,
-        shp_folder,
-        "dengue_propagation",
-        1,
-        output_folder=path.abspath("temp/first_test"),
-    )
-    # Instance Generator
-    inst_gen = InstanceGenerator(graph, simulation)
-    inst_gen.generate_single_scenarios(10)
+    # osm_map = OpenStreetMap("Limoeiro do Norte, Ceará", 300)
+    # # Graph
+    # graph = MapAdapter.convert_osm_to_graph(osm_map)
+    # # Shapefile
+    # shp_folder = path.abspath("temp/shp/as")
+    # MapAdapter.export_osm_to_shapefile(osm_map, shp_folder)
+    # # Simulation
+    # simulation = Simulation(
+    #     50,
+    #     10,
+    #     200,
+    #     200,
+    #     50,
+    #     shp_folder,
+    #     "dengue_propagation",
+    #     1,
+    #     output_folder=path.abspath("temp/first_test"),
+    # )
+    # # Instance Generator
+    # inst_gen = InstanceGenerator(graph, simulation)
+    # inst_gen.generate_single_scenarios(10)
 
     # MapAdapter.write_graph_to_txt(graph, path.abspath("temp/limoeiro-500.txt"))
 

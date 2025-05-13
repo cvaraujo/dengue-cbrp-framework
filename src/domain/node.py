@@ -1,10 +1,22 @@
+from typing import Set
+
 class Node:
-    def __init__(self, osmid, index, lat, lon):
-        self._osmid = osmid
-        self._index = index
-        self._lat = lat
-        self._lon = lon
-        self._block = set()
+    def __init__(self, osmid: str, index: int, lat: float, lon: float):
+        self._osmid: str = osmid
+        self._index: int = index
+        self._lat: float = lat
+        self._lon: float = lon
+        self._blocks: Set[int] = set()
+
+    def get_blocks(self) -> Set[int]:
+        return self._blocks if self._blocks else {-1}
+
+    def add_block(self, block_num: int):
+        self._blocks.add(block_num)
+
+    @property
+    def osmid(self, value):
+        self._osmid = value
 
     @property
     def osmid(self):
@@ -29,6 +41,3 @@ class Node:
     @block.setter
     def block(self, value):
         self._block = value
-
-    def add_block(self, b):
-        self._block.add(b)
