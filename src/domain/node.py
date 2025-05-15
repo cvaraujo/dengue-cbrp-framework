@@ -15,6 +15,10 @@ class Node:
         self._blocks.add(block_num)
 
     @property
+    def blocks(self):
+        return self._blocks
+
+    @property
     def osmid(self, value):
         self._osmid = value
 

@@ -3,18 +3,24 @@
 from adapters.osm.map_adapter import MapAdapter
 from domain.osm import OpenStreetMap
 from domain.graph import Graph
+from use_cases.deterministic_instance import *
 import logging
 import osmnx as ox
 from os import path
 import networkx as nx
 
 ox.settings.use_cache = True
-# ox.settings.all_oneway = True
 logging.basicConfig(level=logging.INFO)
+# python3 -m venv .venv
 
 if __name__ == "__main__":
-    osm_map: OpenStreetMap = OpenStreetMap("Alto Santo, Ceará", 1000)
+    city_name: str = "Alto Santo, Ceará, Brasil"
+    map_size: int = 500
+    output_folder: str = "." 
+    osm_map: OpenStreetMap = OpenStreetMap(city_name, map_size)
     graph: Graph = MapAdapter.convert_osm_to_graph(osm_map, True)
+    dt: DeterministicInstance = DeterministicInstance(graph)
+    dt.generate_deterministic_instance(city_name, map_size, "2021-01-01", "2021-06-30", output_folder, 1)
 
     # OpenStreetMap
     # osm_map = OpenStreetMap("Limoeiro do Norte, Ceará", 300)

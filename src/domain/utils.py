@@ -263,3 +263,12 @@ def get_cycle(graph, face, used_arcs):
         return []
     except Exception as e:
         print(f"[!!!] (get_cycles) Error: {e}")
+
+def all_blocks_as_polygon(graph):
+    b = graph.b
+    coords = [[] for _ in range(b)]
+    for i in range(0, b):
+        block_index = i
+        if block_index in graph.block_nodes:
+            coords[i] = [(graph.nodes[j].lon, graph.nodes[j].lat) for j in graph.block_nodes[block_index]]
+    return coords
