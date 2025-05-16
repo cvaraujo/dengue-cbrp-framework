@@ -1,5 +1,6 @@
 import os, copy
 import osmnx as ox
+import geopandas as gpd
 from domain.osm import *
 from domain.graph import *
 from domain.utils import *
@@ -9,7 +10,7 @@ class MapAdapter:
     def add_key_block_arc_attrs(osm: OpenStreetMap, graph: Graph):
         try:
             for u, v, data in osm.osm_map.edges(data=True):
-                data["block"] = get_arc_block_from_osmid_nodes(str(u), str(v), graph)
+                data["block"] = graph.get_arc_block_from_osmid_nodes(str(u), str(v))
         except Exception as e:
             print("[!!!] Error:", e)
 
@@ -17,8 +18,10 @@ class MapAdapter:
     def export_osm_to_shapefile(osm: OpenStreetMap, graph: Graph, path: str) -> bool:
         try:
             os.makedirs(path, exist_ok=True)
-            add_key_block_arc_attrs(osm, graph)
-            ox.save_graph_geopackage(osm.osm_map, filepath=path, directed=True)
+            MapAdapter.add_key_block_arc_attrs(osm, graph)
+            gdf_nodes, gdf_arcs = ox.convert.graph_to_gdfs(osm.osm_map)
+            gdf_nodes.to_file(path + "/nodes.shp", driver='ESRI Shapefile', encoding='utf-8')
+            gdf_arcs.to_file(path + "/edges.shp", driver='ESRI Shapefile', encoding='utf-8')
             return True
         except Exception as e:
             print("[!!!] Error to write the shapefiles:", e)
@@ -63,15 +66,15 @@ class MapAdapter:
                 face_arcs.append((face[-1], face[0]))
 
             if len(face_arcs) == len(face):
-                graph.b += 1
                 graph.block_pairs[graph.b] = face_arcs
                 graph.block_nodes[graph.b] = face
                 for arc in face_arcs:
                     used_arcs[arc] = True
+                graph.b += 1
             else:
                 invalid_faces.append(face)
 
-        for key in range(1, graph.b + 1):
+        for key in range(graph.b):
             graph.block_arcs[key] = []
             for i, j in graph.block_pairs[key]:
                 k = graph.get_arc_index(i, j)
@@ -80,9 +83,7 @@ class MapAdapter:
                 graph.arcs[i][k].block = key
                 graph.block_arcs[key].append(graph.arcs[i][k])
 
-        print("Nodes:", graph.n)
-        print("Arcs:", graph.m)
-        print("Blocks:", graph.b)
+        print("N:", graph.n, ", A:", graph.m, ", B:", graph.b)
 
     @staticmethod
     def convert_osm_to_graph(osm: OpenStreetMap, always_two_ways: bool) -> Graph:
@@ -113,7 +114,7 @@ class MapAdapter:
             osm.osm_map.add_edges_from(new_arcs)
         else:
             for arc in arcs:
-                add_osm_arc(arc, graph)
+                graph.add_osm_arc(arc, graph)
 
         MapAdapter.set_graph_blocks(graph)
         return graph

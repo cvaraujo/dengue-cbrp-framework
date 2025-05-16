@@ -1,6 +1,9 @@
+from typing import List
+from datetime import datetime, timedelta
 import math
-from collections import defaultdict
-
+import numpy as np
+import pandas as pd
+from domain.graph import Graph
 
 def on_segment(p, q, r):
     px, py = p
@@ -272,3 +275,66 @@ def all_blocks_as_polygon(graph):
         if block_index in graph.block_nodes:
             coords[i] = [(graph.nodes[j].lon, graph.nodes[j].lat) for j in graph.block_nodes[block_index]]
     return coords
+
+def compute_people_per_block(graph: Graph, people_per_km2: float):
+    """
+    Computes estimated people per block using min and max arc lengths.
+
+    Args:
+        graph: An object with `block_arcs`, where each block_arcs[i] is a list of arcs with a `length` attribute.
+        people_per_km2: Density of people per km² (float).
+
+    Returns:
+        A NumPy array of estimated people per block (rounded up).
+    """
+    num_blocks = graph.b
+    people_per_block = np.zeros(num_blocks, dtype=np.float64)
+
+    for i in range(num_blocks):
+        lengths = [arc.length for arc in graph.block_arcs[i]]
+        if lengths:
+            min_len = min(lengths)
+            max_len = max(lengths)
+            area_est = max_len * min_len
+            people_per_block[i] = math.ceil(area_est * people_per_km2)
+        else:
+            people_per_block[i] = 0.0
+
+    return people_per_block
+
+def get_infected_recovered_people_per_block(df: pd.DataFrame, graph: Graph, start_date: datetime.date, coord_blocks: List):
+    """
+    Maps dengue notification points to blocks and classifies as infected or recovered.
+
+    Args:
+        df (pd.DataFrame): DataFrame with 'x', 'y', 'data_notification', 'classification'.
+        graph: Graph with attribute `b` = number of blocks.
+        start_date (datetime.date): Start date of simulation.
+        coord_blocks (list): List of polygons (each block).
+        point_in_polygon (func): Function to check if point (y, x) is in polygon.
+
+    Returns:
+        Tuple of two np.arrays: infected_people_per_block, recovered_people_per_block
+    """
+    # Filter out classification 5 (likely "discarded" cases)
+    filtered_df = df[df["classification"] != 5]
+
+    num_blocks = graph.b
+    infected = np.zeros(num_blocks, dtype=int)
+    recovered = np.zeros(num_blocks, dtype=int)
+
+    range_infected_date = start_date - timedelta(days=7)
+
+    for _, row in filtered_df.iterrows():
+        y, x = float(row["y"]), float(row["x"])
+        notif_date = pd.to_datetime(row["data_notification"])
+        
+        for i, polygon in enumerate(coord_blocks):
+            if point_in_polygon((y, x), polygon):
+                if notif_date > range_infected_date:
+                    infected[i] += 1
+                else:
+                    recovered[i] += 1
+                break  # once matched to a block, stop checking
+
+    return infected, recovered

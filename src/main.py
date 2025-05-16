@@ -4,10 +4,13 @@ from adapters.osm.map_adapter import MapAdapter
 from domain.osm import OpenStreetMap
 from domain.graph import Graph
 from use_cases.deterministic_instance import *
+from use_cases.simulation import Simulation
 import logging
 import osmnx as ox
 from os import path
 import networkx as nx
+
+from use_cases.stochastic_instance import StochasticInstanceGenerator
 
 ox.settings.use_cache = True
 logging.basicConfig(level=logging.INFO)
@@ -17,10 +20,14 @@ if __name__ == "__main__":
     city_name: str = "Alto Santo, Ceará, Brasil"
     map_size: int = 500
     output_folder: str = "." 
-    osm_map: OpenStreetMap = OpenStreetMap(city_name, map_size)
-    graph: Graph = MapAdapter.convert_osm_to_graph(osm_map, True)
-    dt: DeterministicInstance = DeterministicInstance(graph)
-    dt.generate_deterministic_instance(city_name, map_size, "2021-01-01", "2021-06-30", output_folder, 1)
+    si = StochasticInstanceGenerator(output_folder)
+    si.generate(city_name, map_size, "2021-01-01", "2021-06-30", 0, 0.013, 10)
+
+    # sim.run_simulation({}, False)
+    # osm_map: OpenStreetMap = OpenStreetMap(city_name, map_size)
+    # graph: Graph = MapAdapter.convert_osm_to_graph(osm_map, True)
+    # dt: DeterministicInstance = DeterministicInstance(graph)
+    # dt.generate_deterministic_instance(city_name, map_size, "2021-01-01", "2021-06-30", output_folder, 1)
 
     # OpenStreetMap
     # osm_map = OpenStreetMap("Limoeiro do Norte, Ceará", 300)

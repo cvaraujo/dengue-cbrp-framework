@@ -12,10 +12,18 @@ class Graph:
         self.osmid_node_map: Dict[str, Node] = {}
         self.block_nodes: Dict[int, List[int]] = {}
         self.block_pairs: Dict[int, List[Tuple[int, int]]] = {}
-        self.block_arcs: Dict[int, List[Arc]] = {}
+        self._block_arcs: Dict[int, List[Arc]] = {}
         self.nodes: Dict[int, Node] = {}
         self.arcs: Dict[int, List[Arc]] = {}
         self.plot: bool = False
+
+    @property
+    def block_arcs(self):
+        return self._block_arcs
+    
+    @block_arcs.setter
+    def block_arcs(self, value):
+        self._block_arcs = value
 
     def add_osm_node(self, node: Node):
         self.n += 1
@@ -73,8 +81,7 @@ class Graph:
             if arc.target.index == target:
                 return arc
         return None
-
-    # N1, N4, 
+ 
     def print_graph(self):
         print("Number of nodes: ", self.n)
         print("Number of arcs: ", self.m)
@@ -86,25 +93,3 @@ class Graph:
         for i in range(self.n):
             for j in range(len(self.arcs[i])):
                 print(f"Arc {i} -> {self.arcs[i][j].target.index}: {self.arcs[i][j].block} = {self.arcs[i][j].length}")
-
-    def plot_graph(self, osm):
-        g = osm.osm_map
-        colors = ["r", "g", "b", "c"]
-        route = []
-
-        for b in range(1, self.b + 1):
-            dirgrassa = []
-            for i, j in self.block_pairs.get(b, []):
-                dirgrassa.append((i, j))
-                route.append([int(self.nodes[i].osmid), int(self.nodes[j].osmid)])
-            print(dirgrassa)
-
-        try:
-            ox.plot.plot_graph_routes(
-                g,
-                route,
-                route_colors=[colors[(i % len(colors))] for i in range(len(route))],
-                save=False,
-            )
-        except Exception as e:
-            print(e)
