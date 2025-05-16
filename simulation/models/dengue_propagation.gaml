@@ -18,8 +18,8 @@ global {
      'dbtype'::'postgres',
      'database'::'dengue-propagation',
      'port'::'5432',
-     'user'::'araujo',
-     'passwd'::'admin']; 
+     'user'::'postgres',
+     'passwd'::'07021997']; 
 	//["dbtype"::"sqlite", "database"::sqlite_ds];
 	// Step size
 	float step <- 12 #h;
@@ -149,7 +149,7 @@ global {
 		// Get the number of blocks
 		int num_blocks <- Roads max_of(each.block_id);
 		
-		loop i from: 1 to: num_blocks {
+		loop i from: 0 to: num_blocks {
 			// Get the roads and vertices of the block
 			list<Roads> block_roads <- Roads where (each.block_id = i);
 			list nodes <- block_roads collect([each.u, each.v]);
@@ -249,7 +249,7 @@ global {
 		loop spc over: ["mosquitoes", "people", "breeding_sites", "eggs"] {
 			delete_query <- delete_query + "delete from " + spc + " where execution_id=" + string(start_from_execution_id) +
 			" and simulation_id=" + string(start_from_scenario) + " and cycle=" + string(start_from_cycle) + "; ";
-			}
+		}
 					
 		write "[!] Removing Old Data from Database...";
 		ask Saver {
@@ -955,6 +955,7 @@ species Saver parent: AgentDB {
 			do executeUpdate(
 				updateComm: query_people
 			);
+			do close();
 		}
  	}
  	
@@ -962,7 +963,11 @@ species Saver parent: AgentDB {
 //		do save_species;
    }
    
-   	reflex save_metrics when: !end_simulation {	
+   	reflex save_metrics when: !end_simulation {
+   		if (!self.isConnected()) {
+   			do connect(params: POSTGRES);
+   		}
+   		
 		if run_batch {
 			list<string> simulation_id <- simulation_name split_with ' ';
 			scenario_id <- int(simulation_id[1]) + 1;
@@ -973,13 +978,18 @@ species Saver parent: AgentDB {
 		int exposed   <- 0;
 		int infected  <- People count ((each.state = 1) and (each.start_infected = false));
 		int recovered <- 0;
-	
-		do insert(
-			into: "metrics",
-			values: [
-				execution_id, scenario_id, start_from_cycle + cycle,
-				start_from_cycle, string(current_date), "people", 0, exposed, infected, recovered, 0
-		]);
+		
+		// WARNING: Do not use built in INSERT if the query has some DATE
+		string query_metrics <- "INSERT INTO metrics(execution_id, simulation_id, cycle, 
+			started_from_cycle, event_date, specie, susceptible, exposed, infected, recovered, dead) VALUES";	
+		string prefix <- "(" + string(execution_id) + ", " + string(scenario_id) + ", " + string(start_from_cycle + cycle) + ", " + string(start_from_cycle);
+		
+		query_metrics <- query_metrics + prefix + ", '" + string(current_date) + "', '" + "people" + "', " + string(0) +
+		", " + string(exposed) + ", " + string(infected) + ", " + string(recovered) + ", 0)";
+			
+		do executeUpdate(
+			updateComm: query_metrics
+		);
 	}
 }
 
@@ -993,7 +1003,7 @@ experiment dengue_propagation type: gui until: (cycle >= max_cycles and end_simu
 	parameter "Start Date" var: start_date_str category: "string" init: "2017-01-09";
 	parameter "Max cycles" var: max_cycles category: "int" init: 60;
 	parameter "Execution id" var: execution_id category: "int" init: 1;
-	parameter "Shapefile:" var: default_shp_dir category: "string" init: "/home/araujo/Documents/dengue-arp-simulation/includes/LIMOEIRO_2500";
+	parameter "Shapefile:" var: default_shp_dir category: "string" init: "/home/carlos/Documentos/dengue-cbrp-framework/includes/ALTO SANTO_500";
 	//
 	parameter "Number of outbreak agents" var: nb_breeding_sites category: "int";
 	parameter "Number of people agents" var: nb_people category: "int";
@@ -1017,7 +1027,7 @@ experiment dengue_propagation type: gui until: (cycle >= max_cycles and end_simu
 //				data "Recovered" value: People count (each.state = 2) color: #green;
 //			}
 //		}
-//		display city type: opengl{
+//		display city type: opengl {
 //			species Buildings aspect: default;
 //			species Roads aspect: default ;
 //			species People aspect: default ;
@@ -1035,7 +1045,7 @@ experiment headless_dengue_propagation type: batch keep_seed: true until: (cycle
 	parameter "Start Date" var: start_date_str category: "string" init: "2020-05-08";
 	parameter "Max cycles" var: max_cycles category: "int" init: 1;
 	parameter "Execution id" var: execution_id category: "int" init: 1;
-	parameter "Shapefile:" var: default_shp_dir category: "string" init: "/home/araujo/Documents/dengue-arp-simulation/includes/ALTO SANTO_700";
+	parameter "Shapefile:" var: default_shp_dir category: "string" init: "/home/carlos/Documentos/dengue-cbrp-framework/includes/ALTO SANTO_500";
 	//
 	parameter "Number of outbreak agents" var: nb_breeding_sites category: "int";
 	parameter "Number of people agents" var: nb_people category: "int";

@@ -1,9 +1,9 @@
---drop table eggs;
---drop table people;
---drop table mosquitoes;
---drop table breeding_sites;
---drop table metrics;
---drop table cases;
+DROP TABLE IF EXISTS eggs;
+DROP TABLE IF EXISTS people;
+DROP TABLE IF EXISTS mosquitoes;
+DROP TABLE IF EXISTS breeding_sites;
+DROP TABLE IF EXISTS metrics;
+-- DROP TABLE IF EXISTS cases;
 
 CREATE TABLE people (
     execution_id INT NOT NULL,
@@ -13,7 +13,7 @@ CREATE TABLE people (
     name VARCHAR(40),
     id INT,
     date_of_birth DATE,
-    objective varchar(20) DEFAULT "resting",
+    objective VARCHAR(20) DEFAULT 'resting',
     speed FLOAT DEFAULT -1.0,
     state INT DEFAULT 0,
     living_place INT DEFAULT -1,
