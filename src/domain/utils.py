@@ -3,13 +3,14 @@ from datetime import datetime, timedelta
 import math
 import numpy as np
 import pandas as pd
-from domain.graph import Graph
+
 
 def on_segment(p, q, r):
     px, py = p
     qx, qy = q
     rx, ry = r
     return (min(px, rx) <= qx <= max(px, rx)) and (min(py, ry) <= qy <= max(py, ry))
+
 
 def orientation(p, q, r):
     px, py = p
@@ -19,6 +20,7 @@ def orientation(p, q, r):
     if val == 0:
         return 0  # colinear
     return 1 if val > 0 else 2  # clockwise or counterclockwise
+
 
 def do_intersect(p1, q1, p2, q2):
     o1 = orientation(p1, q1, p2)
@@ -41,6 +43,7 @@ def do_intersect(p1, q1, p2, q2):
 
     return False
 
+
 def get_intersection_point(a, b, c, d):
     (xa, ya), (xb, yb), (xc, yc), (xd, yd) = a, b, c, d
     m1 = (yb - ya) / (xb - xa)
@@ -49,6 +52,7 @@ def get_intersection_point(a, b, c, d):
     k2 = yc - m2 * xc
     x = (k2 - k1) / (m1 - m2)
     return (x, m1 * x + k1)
+
 
 def point_in_polygon(p, polygon):
     n = len(polygon)
@@ -64,8 +68,10 @@ def point_in_polygon(p, polygon):
         nex = (i + 1) % n
         nexnex = (nex + 1) % n
 
-        if orientation(polygon[i], polygon[nex], polygon[nexnex]) == 0 and \
-           (polygon[i], polygon[nex]) != (polygon[nexnex], polygon[nex]):
+        if orientation(polygon[i], polygon[nex], polygon[nexnex]) == 0 and (
+            polygon[i],
+            polygon[nex],
+        ) != (polygon[nexnex], polygon[nex]):
             nex = nexnex
 
         if do_intersect(polygon[i], polygon[nex], p, extreme):
@@ -81,6 +87,7 @@ def point_in_polygon(p, polygon):
 
     return count % 2 == 1
 
+
 def clockwise_angle(origin, point, ref_vec=(0, 1)):
     try:
         vec = [point[0] - origin[0], point[1] - origin[1]]
@@ -95,6 +102,7 @@ def clockwise_angle(origin, point, ref_vec=(0, 1)):
     except Exception as e:
         print(f"[!!!] (clockwise_angle) Error: {e}")
 
+
 def calculate_slope(coord_i, coord_j):
     try:
         xi, yi = coord_i
@@ -102,6 +110,7 @@ def calculate_slope(coord_i, coord_j):
         return math.atan2(xj - xi, yj - yi)
     except Exception as e:
         print(f"[!!!] (slope) Error: {e}")
+
 
 def get_next_face_arc(nodes_angle, i, j):
     try:
@@ -117,6 +126,7 @@ def get_next_face_arc(nodes_angle, i, j):
     except Exception as e:
         print(f"[!!!] (next_face_arc) Error: {e}")
 
+
 def get_face(nodes_angle, i, j):
     try:
         face = [i]
@@ -129,6 +139,7 @@ def get_face(nodes_angle, i, j):
     except Exception as e:
         print(f"[!!!] (get_face) Error: {e}")
 
+
 def normalize_face(face):
     try:
         min_index = face.index(min(face))
@@ -136,12 +147,15 @@ def normalize_face(face):
     except Exception as e:
         print(f"[!!!] (Normalize) Error: {e}")
 
+
 def is_valid_face(graph, face):
     try:
-        face_arcs = [(face[i - 1], face[i]) for i in range(1, len(face))] + \
-                    [(face[-1], face[0])] + \
-                    [(face[i], face[i - 1]) for i in range(1, len(face))] + \
-                    [(face[0], face[-1])]
+        face_arcs = (
+            [(face[i - 1], face[i]) for i in range(1, len(face))]
+            + [(face[-1], face[0])]
+            + [(face[i], face[i - 1]) for i in range(1, len(face))]
+            + [(face[0], face[-1])]
+        )
 
         coords = [(graph.nodes[i].lon, graph.nodes[i].lat) for i in face]
 
@@ -156,7 +170,14 @@ def is_valid_face(graph, face):
                     continue
                 xi, yi = arc.source.lon, arc.source.lat
                 xj, yj = arc.target.lon, arc.target.lat
-                if any(val < min_val or val > max_val for val, min_val, max_val in zip([xi, xj, yi, yj], [min_x]*2 + [min_y]*2, [max_x]*2 + [max_y]*2)):
+                if any(
+                    val < min_val or val > max_val
+                    for val, min_val, max_val in zip(
+                        [xi, xj, yi, yj],
+                        [min_x] * 2 + [min_y] * 2,
+                        [max_x] * 2 + [max_y] * 2,
+                    )
+                ):
                     continue
                 mid = ((xi + xj) / 2.0, (yi + yj) / 2.0)
                 if point_in_polygon(mid, coords):
@@ -165,17 +186,19 @@ def is_valid_face(graph, face):
     except Exception as e:
         print(f"[!!!] (is_valid_face) Error: {e}")
 
+
 def is_clockwise(graph, face):
     nodes = graph.nodes
     area = sum(
-        nodes[face[i - 1]].lon * nodes[face[i]].lat -
-        nodes[face[i]].lon * nodes[face[i - 1]].lat
+        nodes[face[i - 1]].lon * nodes[face[i]].lat
+        - nodes[face[i]].lon * nodes[face[i - 1]].lat
         for i in range(1, len(face))
     ) + (
-        nodes[face[-1]].lon * nodes[face[0]].lat -
-        nodes[face[0]].lon * nodes[face[-1]].lat
+        nodes[face[-1]].lon * nodes[face[0]].lat
+        - nodes[face[0]].lon * nodes[face[-1]].lat
     )
     return (area / 2.0) < 0.0
+
 
 def compute_faces(graph):
     n = graph.n
@@ -185,11 +208,18 @@ def compute_faces(graph):
 
     for i in range(n):
         clockwise_sorting[i] = sorted(
-            [(arc.target.index, calculate_slope(
-                (graph.nodes[i].lon, graph.nodes[i].lat),
-                (arc.target.lon, arc.target.lat)
-            )) for arc in graph.arcs[i] if len(graph.arcs[arc.target.index]) > 1],
-            key=lambda x: x[1]
+            [
+                (
+                    arc.target.index,
+                    calculate_slope(
+                        (graph.nodes[i].lon, graph.nodes[i].lat),
+                        (arc.target.lon, arc.target.lat),
+                    ),
+                )
+                for arc in graph.arcs[i]
+                if len(graph.arcs[arc.target.index]) > 1
+            ],
+            key=lambda x: x[1],
         )
 
     for i in range(n):
@@ -211,6 +241,7 @@ def compute_faces(graph):
                 unfeasible_faces.append(face)
 
     return sorted(feasible_faces, key=len)
+
 
 def dfs(graph, face, start_arc, used_arcs):
     try:
@@ -253,6 +284,7 @@ def dfs(graph, face, start_arc, used_arcs):
     except Exception as e:
         print(f"[!!!] (dfs) Error: {e}")
 
+
 def get_cycle(graph, face, used_arcs):
     try:
         start_arc = (face[0], face[-1])
@@ -267,16 +299,21 @@ def get_cycle(graph, face, used_arcs):
     except Exception as e:
         print(f"[!!!] (get_cycles) Error: {e}")
 
+
 def all_blocks_as_polygon(graph):
     b = graph.b
     coords = [[] for _ in range(b)]
     for i in range(0, b):
         block_index = i
         if block_index in graph.block_nodes:
-            coords[i] = [(graph.nodes[j].lon, graph.nodes[j].lat) for j in graph.block_nodes[block_index]]
+            coords[i] = [
+                (graph.nodes[j].lon, graph.nodes[j].lat)
+                for j in graph.block_nodes[block_index]
+            ]
     return coords
 
-def compute_people_per_block(graph: Graph, people_per_km2: float):
+
+def compute_people_per_block(graph, people_per_km2: float):
     """
     Computes estimated people per block using min and max arc lengths.
 
@@ -302,7 +339,10 @@ def compute_people_per_block(graph: Graph, people_per_km2: float):
 
     return people_per_block
 
-def get_infected_recovered_people_per_block(df: pd.DataFrame, graph: Graph, start_date: datetime.date, coord_blocks: List):
+
+def get_infected_recovered_people_per_block(
+    df: pd.DataFrame, graph, start_date: datetime.date, coord_blocks: List
+):
     """
     Maps dengue notification points to blocks and classifies as infected or recovered.
 
@@ -323,12 +363,12 @@ def get_infected_recovered_people_per_block(df: pd.DataFrame, graph: Graph, star
     infected = np.zeros(num_blocks, dtype=int)
     recovered = np.zeros(num_blocks, dtype=int)
 
-    range_infected_date = start_date - timedelta(days=7)
+    range_infected_date = start_date - timedelta(days=30)
 
     for _, row in filtered_df.iterrows():
         y, x = float(row["y"]), float(row["x"])
         notif_date = pd.to_datetime(row["data_notification"])
-        
+
         for i, polygon in enumerate(coord_blocks):
             if point_in_polygon((y, x), polygon):
                 if notif_date > range_infected_date:

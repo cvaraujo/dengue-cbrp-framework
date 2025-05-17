@@ -18,8 +18,9 @@ logging.basicConfig(level=logging.INFO)
 
 if __name__ == "__main__":
     city_name: str = "Alto Santo, Ceará, Brasil"
-    map_size: int = 500
-    output_folder: str = "." 
+    map_size: int = 700
+    output_folder: str = "."
+    sim = Simulation()
     si = StochasticInstanceGenerator(output_folder)
     si.generate(city_name, map_size, "2021-01-01", "2021-06-30", 0, 0.013, 10)
 

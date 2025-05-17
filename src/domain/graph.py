@@ -1,7 +1,10 @@
-from typing import Dict, List, Tuple, Set, Optional
-import osmnx as ox
+from typing import Dict, List, Tuple, Optional
+import copy
+from venv import logger
 from domain.node import *
 from domain.arc import *
+from domain.utils import compute_faces
+
 
 class Graph:
     def __init__(self):
@@ -20,7 +23,7 @@ class Graph:
     @property
     def block_arcs(self):
         return self._block_arcs
-    
+
     @block_arcs.setter
     def block_arcs(self, value):
         self._block_arcs = value
@@ -30,12 +33,16 @@ class Graph:
         self.nodes[node.index] = node
         self.osmid_node_map[node.osmid] = node
 
-    def add_osm_arc(self, arc_tuple: Tuple[int, int, dict], with_two_ways: bool = True) -> bool:
+    def add_osm_arc(
+        self, arc_tuple: Tuple[int, int, dict], with_two_ways: bool = True
+    ) -> bool:
         source_id, target_id, arc_data = arc_tuple
         source = self.osmid_node_map[str(source_id)]
         target = self.osmid_node_map[str(target_id)]
 
-        if source.index == target.index or target.index in [a.target.index for a in self.arcs[source.index]]:
+        if source.index == target.index or target.index in [
+            a.target.index for a in self.arcs[source.index]
+        ]:
             return False
 
         name = str(arc_data.get("name", ""))
@@ -70,7 +77,7 @@ class Graph:
     def get_arc_index(self, source: int, target: int) -> int:
         if source >= len(self.arcs):
             return -1
-        
+
         for i, arc in enumerate(self.arcs[source]):
             if arc.target.index == target:
                 return i
@@ -81,7 +88,7 @@ class Graph:
             if arc.target.index == target:
                 return arc
         return None
- 
+
     def print_graph(self):
         print("Number of nodes: ", self.n)
         print("Number of arcs: ", self.m)
@@ -92,4 +99,72 @@ class Graph:
 
         for i in range(self.n):
             for j in range(len(self.arcs[i])):
-                print(f"Arc {i} -> {self.arcs[i][j].target.index}: {self.arcs[i][j].block} = {self.arcs[i][j].length}")
+                print(
+                    f"Arc {i} -> {self.arcs[i][j].target.index}: {self.arcs[i][j].block} = {self.arcs[i][j].length}"
+                )
+
+    def set_graph_blocks(self):
+        used_arcs = {
+            (i, arc.target.index): False for i in range(self.n) for arc in self.arcs[i]
+        }
+        graph_prime = copy.deepcopy(self)
+
+        # Copy arcs with both directions
+        for i in range(self.n):
+            for arc in self.arcs[i]:
+                if arc.oneway:
+                    rev_arc = copy.deepcopy(arc)
+                    rev_arc.source, rev_arc.target = arc.target, arc.source
+                    graph_prime.arcs[rev_arc.source.index].append(rev_arc)
+
+        # Remove dead ends
+        i = 0
+        while i < self.n:
+            if len(graph_prime.arcs[i]) == 1:
+                graph_prime.arcs[i] = []
+                for j in range(self.n):
+                    if j == i:
+                        continue
+                    k = 0
+                    while k < len(graph_prime.arcs[j]):
+                        if graph_prime.arcs[j][k].target.index == i:
+                            del graph_prime.arcs[j][k]
+                            break
+                        k += 1
+                i = 0
+            i += 1
+
+        valid_faces = compute_faces(graph_prime)
+        invalid_faces = []
+
+        for face in valid_faces:
+            face_arcs = [
+                (face[i - 1], face[i])
+                for i in range(1, len(face))
+                if (face[i - 1], face[i]) in used_arcs
+                and not used_arcs[(face[i - 1], face[i])]
+            ]
+            if (face[-1], face[0]) in used_arcs and not used_arcs[(face[-1], face[0])]:
+                face_arcs.append((face[-1], face[0]))
+
+            if len(face_arcs) == len(face):
+                self.block_pairs[self.b] = face_arcs
+                self.block_nodes[self.b] = face
+                for arc in face_arcs:
+                    used_arcs[arc] = True
+                self.b += 1
+            else:
+                invalid_faces.append(face)
+
+        for key in range(self.b):
+            self.block_arcs[key] = []
+            for i, j in self.block_pairs[key]:
+                k = self.get_arc_index(i, j)
+                self.nodes[i].add_block(key)
+                self.nodes[j].add_block(key)
+                self.arcs[i][k].block = key
+                self.block_arcs[key].append(self.arcs[i][k])
+
+        logger.info(
+            f"[*] Graph has {self.n} nodes, {self.m} arcs and {self.b} blocks..."
+        )
