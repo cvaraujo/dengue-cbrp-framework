@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 import math
 import numpy as np
 import pandas as pd
+from shapely.geometry import Point, Polygon
 
 
 def on_segment(p, q, r):
@@ -300,17 +301,37 @@ def get_cycle(graph, face, used_arcs):
         print(f"[!!!] (get_cycles) Error: {e}")
 
 
-def all_blocks_as_polygon(graph):
-    b = graph.b
-    coords = [[] for _ in range(b)]
-    for i in range(0, b):
-        block_index = i
+def all_blocks_as_polygons(graph):
+    """
+    Convert all Graph blocks into `shapely.geometry.Polygon`.
+
+    Return:
+        List[Polygon]: list of polygons representing all blocks.
+    """
+    polygons = []
+    for block_index in range(graph.b):
         if block_index in graph.block_nodes:
-            coords[i] = [
+            coords = [
                 (graph.nodes[j].lon, graph.nodes[j].lat)
                 for j in graph.block_nodes[block_index]
             ]
-    return coords
+            if len(coords) >= 3:
+                polygons.append(Polygon(coords))
+    return polygons
+
+
+def point_in_any_polygon(point: Point, polygon: Polygon):
+    """
+    Check if a point is inside any polygon from a list.
+
+    Args:
+        point (tuple): (lon, lat) or (x, y).
+        polygons (List[Polygon]): List of shapely Polygon objects.
+
+    Returns:
+        bool: True if point is inside any of the polygons.
+    """
+    return polygon.contains(point)
 
 
 def compute_people_per_block(graph, people_per_km2: float):
@@ -363,14 +384,16 @@ def get_infected_recovered_people_per_block(
     infected = np.zeros(num_blocks, dtype=int)
     recovered = np.zeros(num_blocks, dtype=int)
 
-    range_infected_date = start_date - timedelta(days=30)
+    range_infected_date = start_date - timedelta(days=7)
 
     for _, row in filtered_df.iterrows():
         y, x = float(row["y"]), float(row["x"])
         notif_date = pd.to_datetime(row["data_notification"])
+        point: Point = Point(y, x)
 
         for i, polygon in enumerate(coord_blocks):
-            if point_in_polygon((y, x), polygon):
+            if polygon.contains(point):
+                # if point_in_polygon((y, x), polygon):
                 if notif_date > range_infected_date:
                     infected[i] += 1
                 else:
@@ -378,3 +401,12 @@ def get_infected_recovered_people_per_block(
                 break  # once matched to a block, stop checking
 
     return infected, recovered
+
+
+def last_day_of_week(date: datetime.date):
+    return date + timedelta(days=(6 - date.weekday()))
+
+
+def case_in_one_block(row: pd.Series, coord_blocks: List):
+    point = Point(float(row["x"]), float(row["y"]))
+    return any(polygon.contains(point) for polygon in coord_blocks)

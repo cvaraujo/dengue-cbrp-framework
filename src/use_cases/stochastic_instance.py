@@ -1,7 +1,5 @@
-from time import sleep
+import os
 from typing import List
-import os, logging
-import numpy as np
 from datetime import datetime
 from venv import logger
 import adapters.json.json_adapter as JsonAdapter
@@ -118,7 +116,7 @@ class StochasticInstanceGenerator:
         cases = self.db.get_notifications_between_dates(start_date, end_date, city_key)
 
         logger.info("[*] Processing blocks and population data...")
-        coord_blocks = Utils.all_blocks_as_polygon(graph)
+        coord_blocks = Utils.all_blocks_as_polygons(graph)
         people_block = Utils.compute_people_per_block(graph, people_per_km2)
         infected, recovered = Utils.get_infected_recovered_people_per_block(
             cases, graph, datetime.strptime(start_date, "%Y-%m-%d"), coord_blocks
@@ -138,8 +136,8 @@ class StochasticInstanceGenerator:
             people_per_block=people_block,
             infected_people_per_block=infected,
             recovered_people_per_block=recovered,
-            mosquitoes_per_person=1.0,
-            nb_breeding_sites=15,
+            mosquitoes_per_person=1.5,
+            nb_breeding_sites=30,
             proportion_infected_mosquitoes_without_cases=0.2,
             proportion_infected_mosquitoes_with_cases=0.8,
         )
@@ -192,6 +190,6 @@ class StochasticInstanceGenerator:
         self._write_prob_from_scenarios(all_scenarios, graph, scenario_file)
 
         self.db.clear_database()
-        self.db.close_all_idle_connections()
+        # self.db.close_all_idle_connections()
         self.db.close()
         logger.info("[*] Stochastic instance generation completed.")

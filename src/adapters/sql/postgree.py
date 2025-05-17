@@ -24,7 +24,7 @@ class PostgreSQLAdapter:
         )
         self.engine: Engine = create_engine(self.database_url)
         self.conn = self.engine.connect()
-        self.close_all_idle_connections()
+        # self.close_all_idle_connections()
 
     def close(self):
         self.conn.close()
@@ -51,7 +51,7 @@ class PostgreSQLAdapter:
     def get_notifications_between_dates(
         self, start_date: str, end_date: str, city: str
     ) -> pd.DataFrame:
-        logger.info(f"[*]Querying between: { start_date} and {end_date} for {city}... ")
+        logger.info(f"[*] Querying between: {start_date} and {end_date} for {city}... ")
 
         df = pd.read_sql_query(
             NOTIFICATIONS_BETWEEN_DATES_QUERY,

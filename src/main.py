@@ -1,15 +1,7 @@
-# from use_cases.simulation import Simulation
-# from use_cases.instance_generator import InstanceGenerator
-from adapters.osm.map_adapter import MapAdapter
-from domain.osm import OpenStreetMap
-from domain.graph import Graph
 from use_cases.deterministic_instance import *
-from use_cases.simulation import Simulation
 import logging
 import osmnx as ox
-from os import path
-import networkx as nx
-
+from use_cases.simulation_metrics import SimulationMetrics
 from use_cases.stochastic_instance import StochasticInstanceGenerator
 
 ox.settings.use_cache = True
@@ -20,9 +12,10 @@ if __name__ == "__main__":
     city_name: str = "Alto Santo, Ceará, Brasil"
     map_size: int = 700
     output_folder: str = "."
-    sim = Simulation()
-    si = StochasticInstanceGenerator(output_folder)
-    si.generate(city_name, map_size, "2021-01-01", "2021-06-30", 0, 0.013, 10)
+    # ig = StochasticInstanceGenerator(output_folder)
+    # ig.generate(city_name, map_size, "2017-01-01", "2021-01-18", 1, 0.013, 10)
+    si = SimulationMetrics(output_folder)
+    si.compare_simulated_with_real_cases(city_name, map_size, "2017-01-08", 0, 0.013)
 
     # sim.run_simulation({}, False)
     # osm_map: OpenStreetMap = OpenStreetMap(city_name, map_size)
