@@ -136,7 +136,7 @@ global {
 	// ----------------------------------------------------------
 	reflex stop_simulation when: (start_from_cycle + cycle) >= max_cycles {
 		ask Saver {
-			do close;
+//			do close;
 			do die;
 		}
 		
@@ -238,11 +238,11 @@ global {
 	action update_start_scenario {
 		int n <- 0;
 		
-		ask Saver {
-			if (!self.isConnected()) {
-				do connect (params: POSTGRES);
-			}
-		}
+//		ask Saver {
+//			if (!self.isConnected()) {
+//				do connect (params: POSTGRES);
+//			}
+//		}
 		
 		string delete_query <- "";
 		loop spc over: ["mosquitoes", "people", "breeding_sites", "eggs"] {
@@ -253,6 +253,7 @@ global {
 		write "[!] Removing Old Data from Database...";
 		ask Saver {
 			do executeUpdate(
+				params: POSTGRES,
 				updateComm: delete_query
 			);
 		}
@@ -326,6 +327,7 @@ global {
 		write "[!] Inserting New Data into Database...";
 		ask Saver {
 			do executeUpdate(
+				params: POSTGRES,
 				updateComm: query_mosquitoes + query_people + query_bs
 			);
 		}
@@ -336,6 +338,7 @@ global {
 				
 		ask Saver {			
 			list<list> breeding_sites <- self.select(
+				params: POSTGRES,
 				select: "SELECT * FROM breeding_sites where (execution_id=? and simulation_id=? and cycle=?);",
 				values:[start_from_execution_id, start_from_scenario, start_from_cycle]
 			);
@@ -371,6 +374,7 @@ global {
 			
 			// ----------------------------------------------------------
 			list<list> people <- self.select(
+				params: POSTGRES,
 				select: "SELECT * FROM people where (execution_id=? and simulation_id=? and cycle=?);",
 				values:[start_from_execution_id, start_from_scenario, start_from_cycle]
 			);
@@ -421,6 +425,7 @@ global {
 			
 			// ----------------------------------------------------------
 			list<list> mosquitoes <- self.select(
+				params: POSTGRES,
 				select: "SELECT * FROM mosquitoes where (execution_id=? and simulation_id=? and cycle=?);",
 				values:[start_from_execution_id, start_from_scenario, start_from_cycle]
 			);
@@ -465,6 +470,7 @@ global {
 			
 			// ----------------------------------------------------------
 			list<list> eggs <- self.select(
+				params: POSTGRES,
 				select: "SELECT * FROM eggs where (execution_id=? and simulation_id=? and cycle=?);",
 				values:[start_from_execution_id, start_from_scenario, start_from_cycle]
 			);
@@ -520,25 +526,24 @@ global {
 			create Buildings from: building_shapefile with: [name::read("name"), id::int(read("id")), location::read("location")];
 		}
 		
+		create Saver{}		
 		if use_initial_scenario {
 			write "[!] Use Initial Scenario...";
-			create Saver{}
 						
-			ask Saver {
-				if (!self.isConnected()) {
-					do setParameter params: POSTGRES;
-		            do connect params: POSTGRES;
-				}
-			}
+//			ask Saver {
+//				if (!self.isConnected()) {
+//					do setParameter params: POSTGRES;
+//		            do connect params: POSTGRES;
+//				}
+//			}
 			write "[!] Load Starting Scenario...";			
 			do load_starting_scenario;
 		} else {
 			write "[!] Create Starting Scenario...";	
 			do create_starting_scenario;
-			create Saver{}
-			ask Saver {
-				do connect(params: POSTGRES);
-			}
+//			ask Saver {
+//				do connect(params: POSTGRES);
+//			}
 		}
 		
 		write "[!] Model is Loaded...";
@@ -805,7 +810,7 @@ species Blocks {
 	geometry block_polygon;
 }
 
-species Saver parent: AgentDB {
+species Saver skills: [SQLSKILL] {
 	action save_species {		
 		if run_batch {
 			list<string> simulation_id <- simulation_name split_with ' ';
@@ -902,15 +907,16 @@ species Saver parent: AgentDB {
 		}
 				
 		do executeUpdate(
+			params: POSTGRES,
 			updateComm: query_mosquitoes + query_people + query_bs + query_eggs
 		);
 	}
  	
  	reflex save_state_infected_people when: save_states and run_batch {
  		// --------------------------------- People ---------------------------------	
- 		if (!self.isConnected()) {
-			do connect (params: POSTGRES);
-		}
+// 		if (!self.isConnected()) {
+//			do connect (params: POSTGRES);
+//		}
 		
 		if run_batch {
 			list<string> simulation_id <- simulation_name split_with ' ';
@@ -924,7 +930,7 @@ species Saver parent: AgentDB {
 		int cnt <- 1;
 		int nb <- People count ((each.state = 1) and (each.start_infected = false));
 		
-		write "[SAVE]-> " + string(execution_id) + " - " + string(scenario_id) + " - " + string(start_from_cycle + cycle) + " => " + string(nb);
+//		write "[SAVE]-> " + string(execution_id) + " - " + string(scenario_id) + " - " + string(start_from_cycle + cycle) + " => " + string(nb);
 		
 		ask People {
 			if self.state = 1 and self.start_infected = false {
@@ -943,6 +949,7 @@ species Saver parent: AgentDB {
 		
 		if (cnt > 1) {
 			do executeUpdate(
+				params: POSTGRES,
 				updateComm: query_people
 			);
 		}
@@ -953,9 +960,9 @@ species Saver parent: AgentDB {
    }
    
    	reflex save_metrics when: !end_simulation and save_metrics {
-   		if (!self.isConnected()) {
-   			do connect(params: POSTGRES);
-   		}
+//   		if (!self.isConnected()) {
+//   			do connect(params: POSTGRES);
+//   		}
    		
 		if run_batch {
 			list<string> simulation_id <- simulation_name split_with ' ';
@@ -977,6 +984,7 @@ species Saver parent: AgentDB {
 		", " + string(exposed) + ", " + string(infected) + ", " + string(recovered) + ", 0)";
 			
 		do executeUpdate(
+			params: POSTGRES,
 			updateComm: query_metrics
 		);
 		
@@ -1027,7 +1035,7 @@ experiment dengue_propagation type: gui until: (cycle >= max_cycles and end_simu
 }
 
 
-experiment headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 10 {
+experiment headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 100 {
 	//
 	parameter "Type of execution" var: run_batch category: "bool" init: true;
 	parameter "Start Date" var: start_date_str category: "string" init: "2020-05-08";
