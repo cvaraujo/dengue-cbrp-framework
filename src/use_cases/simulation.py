@@ -14,7 +14,7 @@ class Simulation:
         self.server_port = server_port
         self.model = Path(model).resolve()
         self.websocket_url = f"ws://localhost:{self.server_port}"
-        # self._run_gama_headless_with_socket()
+        self._run_gama_headless_with_socket()
 
     async def _send_message(self, websocket, message: dict):
         msg = json.dumps(message)
@@ -62,9 +62,14 @@ class Simulation:
 
     def _run_gama_headless_with_socket(self):
         try:
+            if self.is_gama_running():
+                logger.info("[*] GAMA is already running.")
+                return
+
+            logger.info("[*] Starting GAMA...")
             subprocess.Popen(
                 [self.server_path, "-socket", self.server_port],
-                stdout=subprocess.DEVNULL,  # ou use subprocess.PIPE para capturar a saída
+                stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
         except FileNotFoundError:
@@ -90,3 +95,15 @@ class Simulation:
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
         return False
+
+    def kill_gama_headless(self):
+        for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+            try:
+                cmdline = proc.info.get("cmdline")
+                if cmdline and any("GAMA_1.9.2_" in part for part in cmdline):
+                    logger.info(
+                        f"Ending GAMA process {proc.info['pid']}: {' '.join(proc.info['cmdline'])}"
+                    )
+                    proc.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue

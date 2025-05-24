@@ -1035,7 +1035,7 @@ experiment dengue_propagation type: gui until: (cycle >= max_cycles and end_simu
 }
 
 
-experiment headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 100 {
+experiment headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 5 {
 	//
 	parameter "Type of execution" var: run_batch category: "bool" init: true;
 	parameter "Start Date" var: start_date_str category: "string" init: "2020-05-08";

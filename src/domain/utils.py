@@ -1,6 +1,6 @@
 from typing import List
 from datetime import datetime, timedelta
-import math
+import math, os
 import numpy as np
 import pandas as pd
 from shapely.geometry import Point, Polygon
@@ -410,3 +410,30 @@ def last_day_of_week(date: datetime.date):
 def case_in_one_block(row: pd.Series, coord_blocks: List):
     point = Point(float(row["x"]), float(row["y"]))
     return any(polygon.contains(point) for polygon in coord_blocks)
+
+
+def get_city_info(city: str):
+    if city == "Alto Santo, Ceará, Brasil":
+        return "ALTO SANTO", "alto-santo"
+    return "LIMOEIRO", "limoeiro"
+
+
+def build_shapefile_path(city_key: str, map_size: int) -> str:
+    path = os.path.abspath(f"./includes/{city_key}_{map_size}")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def prepare_parameters(shp_path, exec_id, start_date, max_cycles, save_states):
+    return {
+        "sqlite_ds": ("string", ""),
+        "max_cycles": ("int", max_cycles),
+        "default_shp_dir": ("string", shp_path),
+        "use_initial_scenario": ("bool", True),
+        "start_from_cycle": ("int", 0),
+        "start_from_scenario": ("int", 0),
+        "start_from_execution_id": ("int", exec_id),
+        "start_date_str": ("string", start_date),
+        "execution_id": ("int", exec_id),
+        "save_states": ("bool", save_states),
+    }

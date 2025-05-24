@@ -58,6 +58,11 @@ class SimulationMetrics:
         start_date: str,
         exec_id: int,
         people_per_km2: float,
+        mosquitoes_per_person: float = 1.0,
+        nb_breeding_sites: int = 50,
+        proportion_infected_mosquitoes_without_cases: float = 0.05,
+        proportion_infected_mosquitoes_with_cases: float = 0.4,
+        max_cycles: int = 180,
         plot: bool = True,
     ):
         logger.info("[*] Clearing data from database...")
@@ -103,10 +108,10 @@ class SimulationMetrics:
             people_per_block=people_block,
             infected_people_per_block=infected,
             recovered_people_per_block=recovered,
-            mosquitoes_per_person=1.0,
-            nb_breeding_sites=50,
-            proportion_infected_mosquitoes_without_cases=0.05,
-            proportion_infected_mosquitoes_with_cases=0.4,
+            mosquitoes_per_person=mosquitoes_per_person,
+            nb_breeding_sites=nb_breeding_sites,
+            proportion_infected_mosquitoes_without_cases=proportion_infected_mosquitoes_without_cases,
+            proportion_infected_mosquitoes_with_cases=proportion_infected_mosquitoes_with_cases,
         )
 
         logger.info("[*] Exporting SHP files...")
@@ -123,7 +128,7 @@ class SimulationMetrics:
 
         logger.info("[*] Running batch simulation...")
         params = self._prepare_parameters(
-            shp_path, exec_id, start_date, max_cycles=180, save_states=True
+            shp_path, exec_id, start_date, max_cycles=max_cycles, save_states=True
         )
         sim.run_simulation(JsonAdapter.convert_param_2_list(params), is_batch=True)
 
@@ -136,6 +141,10 @@ class SimulationMetrics:
                 coord_blocks,
                 os.path.join(self.output_folder, f"{city_key}_{map_size}"),
             )
+
+        logger.info("[*] Clearing data from database and closing GAMA...")
+        # self.db.clear_database()
+        sim.kill_gama_headless()
 
     def plot_min_max_avg_real(
         self,
@@ -197,6 +206,7 @@ class SimulationMetrics:
         sim_weeks = sorted(df_sim_grouped["week_str"].unique())
         metrics = []
 
+        # First week represents the start cenários + cases from StartDate (considering approximate two cycles here)
         weeks = [1]
         avg_y = [start_num_infected]
         real_y = [start_num_infected]

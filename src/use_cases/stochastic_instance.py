@@ -17,11 +17,6 @@ class StochasticInstanceGenerator:
         self.output_folder = output_folder
         self.db = PostgreSQLAdapter()
 
-    def _get_city_info(self, city: str):
-        if city == "Alto Santo, Ceará, Brasil":
-            return "ALTO SANTO", "alto-santo"
-        return "LIMOEIRO", "limoeiro"
-
     def _build_shapefile_path(self, city_key: str, map_size: int) -> str:
         path = os.path.abspath(f"./includes/{city_key}_{map_size}")
         os.makedirs(path, exist_ok=True)
@@ -112,7 +107,7 @@ class StochasticInstanceGenerator:
         graph: Graph = MapAdapter.convert_osm_to_graph(osm, True)
 
         logger.info("[*] Retrieving dengue cases...")
-        city_key, city_file = self._get_city_info(city)
+        city_key, city_file = Utils.get_city_info(city)
         cases = self.db.get_notifications_between_dates(start_date, end_date, city_key)
 
         logger.info("[*] Processing blocks and population data...")

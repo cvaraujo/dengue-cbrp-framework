@@ -1,8 +1,7 @@
 from use_cases.deterministic_instance import *
 import logging
 import osmnx as ox
-from use_cases.simulation_metrics import SimulationMetrics
-from use_cases.stochastic_instance import StochasticInstanceGenerator
+from use_cases.optimization.simheuristic import SimheuristicFramework
 
 ox.settings.use_cache = True
 logging.basicConfig(level=logging.INFO)
@@ -11,63 +10,36 @@ logging.basicConfig(level=logging.INFO)
 if __name__ == "__main__":
     city_name: str = "Alto Santo, Ceará, Brasil"
     map_size: int = 700
-    output_folder: str = "."
-    # ig = StochasticInstanceGenerator(output_folder)
-    # ig.generate(city_name, map_size, "2017-01-01", "2021-01-18", 1, 0.013, 10)
-    si = SimulationMetrics(output_folder)
-    si.compare_simulated_with_real_cases(city_name, map_size, "2017-01-08", 0, 0.013)
+    output_folder: str = "temp/simheuristic/"
+    run_params = {
+        "city": city_name,
+        "map_size": map_size,
+        "start_date": "2017-01-08",
+        "end_date": "2017-01-15",
+    }
 
-    # sim.run_simulation({}, False)
-    # osm_map: OpenStreetMap = OpenStreetMap(city_name, map_size)
-    # graph: Graph = MapAdapter.convert_osm_to_graph(osm_map, True)
-    # dt: DeterministicInstance = DeterministicInstance(graph)
-    # dt.generate_deterministic_instance(city_name, map_size, "2021-01-01", "2021-06-30", output_folder, 1)
+    sim_params = {
+        "people_per_km2": 0.013,
+        "mosquitoes_per_person": 1.0,
+        "nb_breeding_sites": 50,
+        "proportion_infected_mosquitoes_without_cases": 0.05,
+        "proportion_infected_mosquitoes_with_cases": 0.4,
+    }
 
-    # OpenStreetMap
-    # osm_map = OpenStreetMap("Limoeiro do Norte, Ceará", 300)
-    # # Graph
-    # graph = MapAdapter.convert_osm_to_graph(osm_map)
-    # # Shapefile
-    # shp_folder = path.abspath("temp/shp/as")
-    # MapAdapter.export_osm_to_shapefile(osm_map, shp_folder)
-    # # Simulation
-    # simulation = Simulation(
-    #     50,
-    #     10,
-    #     200,
-    #     200,
-    #     50,
-    #     shp_folder,
-    #     "dengue_propagation",
-    #     1,
-    #     output_folder=path.abspath("temp/first_test"),
+    os.makedirs(output_folder, exist_ok=True)
+    sh = SimheuristicFramework(output_folder, run_params, sim_params, {})
+    sh.run()
+    # si = SimulationMetrics(output_folder)
+    # si.compare_simulated_with_real_cases(
+    #     city_name,
+    #     map_size,
+    #     "2017-01-08",
+    #     0,
+    #     0.013,
+    #     mosquitoes_per_person=1.0,
+    #     nb_breeding_sites=50,
+    #     proportion_infected_mosquitoes_without_cases=0.05,
+    #     proportion_infected_mosquitoes_with_cases=0.4,
+    #     max_cycles=180,
+    #     plot=True,
     # )
-    # # Instance Generator
-    # inst_gen = InstanceGenerator(graph, simulation)
-    # inst_gen.generate_single_scenarios(10)
-
-    # MapAdapter.write_graph_to_txt(graph, path.abspath("temp/limoeiro-500.txt"))
-
-    # G = nx.Graph()
-    # for node in g.nodes:
-    #     G.add_node(node.index, pos=(node.lon, node.lat))
-    # for i in range(g.n):
-    #     for arc in g.arcs[i]:
-    #         G.add_edge(arc.source, arc.target)
-    # nx.draw(G, nx.get_node_attributes(G, "pos"), with_labels=True)
-
-    # g.create_blocks()
-    # g.plot_graph()
-    # MapAdapter.write_graph_to_txt(g, path.abspath("temp/t1.txt"))
-
-    # Get SHP from map
-    # MapToGraph().export_osm_to_shapefile(osm, path.abspath("temp/shp/as"))
-
-    # # Create the simulation
-
-    # # Run
-    # for _ in range(2):
-    #     simulation.run()
-
-    # Clear environment
-    # simulation.clear()
