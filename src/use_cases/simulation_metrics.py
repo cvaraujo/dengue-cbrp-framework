@@ -335,6 +335,102 @@ class SimulationMetrics:
 
         logger.info("[*] Finished.")
 
+    def plot_multiple_cases(
+        self,
+        start_num_infected: int,
+        start_date: str,
+        city_key: str,
+        filename: str,
+        n_curves: int,
+        style: dict
+    ):
+
+        all_weeks = []
+        all_avg_y = []
+
+        for i in range(n_curves):
+            logger.info(f"[*] Extracting and Processing simulated cases for execution {i}...")
+    
+            df_sim = self.db.query(
+                f"""
+                SELECT simulation_id, event_date
+                FROM metrics_infected_people
+                WHERE execution_id = {i}
+                """
+            )
+
+            logger.info("[*] Processing simulated notifications...")
+            df_sim["event_date"] = pd.to_datetime(df_sim["event_date"])
+            max_sim_date = df_sim["event_date"].max()
+
+            df_sim["week_str"] = df_sim["event_date"].apply(
+                lambda d: Utils.last_day_of_week(d).strftime("%Y-%m-%d")
+            )
+            df_sim["simulation_id"] = df_sim["simulation_id"].astype(str)
+
+            df_sim_grouped = (
+                df_sim.groupby(["week_str", "simulation_id"])
+                .size()
+                .reset_index(name="infected")
+            )
+
+            logger.info("[*] Processing real notifications...")
+            df_real = self.db.get_notifications_between_dates(
+                start_date, max_sim_date, city_key
+            )
+            df_real = df_real[
+                (df_real["classification"] != 5)
+                & df_real.apply(
+                    lambda row: any(
+                        poly.contains(Point(row["y"], row["x"])) for poly in coord_blocks
+                    ),
+                    axis=1,
+                )
+            ][["data_notification"]]
+
+            df_real["data_notification"] = pd.to_datetime(df_real["data_notification"])
+            df_real["week_str"] = df_real["data_notification"].apply(
+                lambda d: Utils.last_day_of_week(d).strftime("%Y-%m-%d")
+            )
+
+            logger.info("[*] Processing data to plot...")
+            sim_weeks = sorted(df_sim_grouped["week_str"].unique())
+
+            weeks = [1]
+            avg_y = [start_num_infected]
+
+            for j, week in enumerate(sim_weeks[1:], start=2):
+                weekly_sim = df_sim_grouped[df_sim_grouped["week_str"] == week][
+                    "infected"
+                ].tolist()
+
+                avg = np.mean(weekly_sim)
+                min_sim = np.min(weekly_sim)
+                max_sim = np.max(weekly_sim)
+
+                weeks.append(j)
+                avg_y.append(avg)
+
+            all_weeks.append(weeks)
+            all_avg_y.append(avg_y)
+
+        logger.info("[*] Saving figure as PDF...")
+
+        plt.figure(figsize=(10, 6))
+        for i in range(n_curves):
+            plt.plot(all_weeks[i], all_avg_y[i], label=style[i]["name"], color=style[i]["color"], linestyle=style[i]["dash"])
+
+        plt.xlabel("Weeks")
+        plt.ylabel("Number of Notifications")
+        plt.grid(True)
+        plt.xticks(all_weeks[0])
+        plt.tight_layout()
+        plt.legend()
+        plt.savefig(filename + ".pdf", format="pdf", bbox_inches="tight")
+        plt.close()
+
+        logger.info("[*] Finished.")    
+
     def test_plot_min_max_avg_real(
         self,
         start_num_infected: int,
