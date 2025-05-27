@@ -1,14 +1,16 @@
 import asyncio, json, websockets, psutil, subprocess
+import os
 from venv import logger
 from pathlib import Path
-
+from dotenv import load_dotenv
+load_dotenv('../.env')
 
 class Simulation:
     def __init__(
         self,
-        server_path: str = "/home/carlos/Documentos/GAMA_1.9.2_Linux_with_JDK/headless/gama-headless.sh",
-        server_port: str = "6868",
-        model: str = "/home/carlos/Documentos/dengue-cbrp-framework/simulation/models/dengue_propagation.gaml",
+        server_path: str = os.getenv('GAMA_PATH', default="/home/carlos/gama/gama-headless"),
+        server_port: str = os.getenv('GAMA_PORT', default="6868"),
+        model: str = os.getenv('SIMULATION_PATH', default="/home/carlos/Documentos/dengue-cbrp-framework/simulation/models/dengue_propagation.gaml"),
     ):
         self.server_path = Path(server_path).resolve()
         self.server_port = server_port
