@@ -8,7 +8,7 @@ load_dotenv('../.env')
 class Simulation:
     def __init__(
         self,
-        server_path: str = os.getenv('GAMA_PATH', default="/home/carlos/gama/gama-headless"),
+        server_path: str = os.getenv('GAMA_PATH', default="/home/carlos/Documentos/GAMA_1.9.2_Linux_with_JDK/headless/gama-headless.sh"),
         server_port: str = os.getenv('GAMA_PORT', default="6868"),
         model: str = os.getenv('SIMULATION_PATH', default="/home/carlos/Documentos/dengue-cbrp-framework/simulation/models/dengue_propagation.gaml"),
     ):
