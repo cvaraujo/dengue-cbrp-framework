@@ -19,7 +19,7 @@ class MosquitoesAdapter:
             df = pd.read_csv(filename, sep=";")
 
             for _, row in df.iterrows():
-                self.create_mosquito_from_row(row)
+                self.create_mosquito_from_row(row, graph, outbreaks)
         except:
             return None
 
@@ -43,7 +43,7 @@ class MosquitoesAdapter:
         except:
             return None
 
-    def update_mosquitoes_from_csv(self, graph: Graph, filename: str):
+    def update_mosquitoes_from_csv(self, graph: Graph, filename: str, outbreaks: OutbreaksAdapter):
         try:
             df = pd.read_csv(filename, sep=";")
             for _, row in df.iterrows():
@@ -61,11 +61,11 @@ class MosquitoesAdapter:
                     mosquito.current_road = current_road
                     mosquito.location = location
                 else:
-                    self.create_mosquito_from_row(row)
+                    self.create_mosquito_from_row(row, graph, outbreaks)
         except:
             return None
 
-    def create_mosquito_from_row(self, row: pd.Series):
+    def create_mosquito_from_row(self, row: pd.Series, graph: Graph, outbreaks: OutbreaksAdapter):
         id = row["id"]
         current_road = graph.get_edge_by_key(row["current_road.id_key"])
         outbreak_id = row["start_outbreak.id"]
