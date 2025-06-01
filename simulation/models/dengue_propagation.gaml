@@ -1048,7 +1048,6 @@ experiment dengue_propagation type: gui until: (cycle >= max_cycles and end_simu
 //	}
 }
 
-
 experiment long_headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 100 {
 	//
 	parameter "Type of execution" var: run_batch category: "bool" init: true;
