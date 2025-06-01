@@ -1034,8 +1034,7 @@ experiment dengue_propagation type: gui until: (cycle >= max_cycles and end_simu
 //	}
 }
 
-
-experiment headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 100 {
+experiment long_headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 100 {
 	//
 	parameter "Type of execution" var: run_batch category: "bool" init: true;
 	parameter "Start Date" var: start_date_str category: "string" init: "2020-05-08";
@@ -1057,6 +1056,29 @@ experiment headless_dengue_propagation type: batch keep_seed: true until: (cycle
 	parameter "Scenario number" var: start_from_scenario category: "int" init: 1;
 	parameter "Cycle number" var: start_from_cycle category: "int" init: 0;
 	parameter "Save" var: save_states category: "bool" init: false;
-	
+}
+
+experiment short_headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 10 {
+	//
+	parameter "Type of execution" var: run_batch category: "bool" init: true;
+	parameter "Start Date" var: start_date_str category: "string" init: "2020-05-08";
+	parameter "Max cycles" var: max_cycles category: "int" init: 0;
+	parameter "Execution id" var: execution_id category: "int" init: 1;
+	parameter "Shapefile:" var: default_shp_dir category: "string" init: "/home/carlos/Documentos/dengue-cbrp-framework/includes/ALTO SANTO_500";
+	//
+	parameter "Number of outbreak agents" var: nb_breeding_sites category: "int";
+	parameter "Number of people agents" var: nb_people category: "int";
+	parameter "Number of infected people agents" var: nb_infected_people category: "int";
+	parameter "Number of mosquitoes agents" var: nb_mosquitoes category: "int";
+	parameter "Number of infected mosquitoes agents" var: nb_infected_mosquitoes category: "int";
+	//
+	parameter "Mosquitoes move probability" var: mosquitoes_move_probability category: "float" init: 0.5;
+	parameter "Maximum radius" var: max_move_radius category: "int" init: 100 #m;
+	//
+	parameter "Start from data" var: use_initial_scenario category: "bool" init: true;
+	parameter "Execution number" var: start_from_execution_id category: "int" init: 1;
+	parameter "Scenario number" var: start_from_scenario category: "int" init: 1;
+	parameter "Cycle number" var: start_from_cycle category: "int" init: 0;
+	parameter "Save" var: save_states category: "bool" init: false;
 }
 
