@@ -44,14 +44,19 @@ class Simulation:
                     logger.info("[*] Batch simulation ended.")
                     return
 
-    async def _run(self, parameters: list[dict], is_batch: bool):
+    async def _run(self, parameters: list[dict], is_batch: bool, short: bool = False):
         async with websockets.connect(self.websocket_url) as websocket:
+            experiment = "dengue_propagation"
+            if is_batch:
+                experiment = (
+                    "short_headless_dengue_propagation"
+                    if short
+                    else "long_headless_dengue_propagation"
+                )
             load_cmd = {
                 "type": "load",
                 "model": str(self.model),
-                "experiment": (
-                    "headless_dengue_propagation" if is_batch else "dengue_propagation"
-                ),
+                "experiment": experiment,
                 "status": True,
                 "until": "end_simulation = true",
                 "parameters": parameters,
@@ -79,10 +84,12 @@ class Simulation:
         except Exception as e:
             logger.error(f"Error to start GAMA: {e}")
 
-    def run_simulation(self, parameters: list[dict], is_batch: bool = False):
+    def run_simulation(
+        self, parameters: list[dict], is_batch: bool = False, short: bool = False
+    ):
         logger.info(f"[*] Connecting to GAMA WebSocket at {self.websocket_url}")
         try:
-            asyncio.run(self._run(parameters, is_batch))
+            asyncio.run(self._run(parameters, is_batch, short))
             logger.info("[*] Simulation finished successfully.")
         except Exception as e:
             logger.error(f"[!] Simulation failed: {e}")

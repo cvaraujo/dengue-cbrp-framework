@@ -1,9 +1,12 @@
 from typing import List
 from datetime import datetime, timedelta
 import math, os
+from venv import logger
 import numpy as np
 import pandas as pd
 from shapely.geometry import Point, Polygon
+import geopandas as gpd
+from matplotlib import pyplot as plt
 
 
 def on_segment(p, q, r):
@@ -311,6 +314,7 @@ def all_blocks_as_polygons(graph):
     polygons = []
     for block_index in range(graph.b):
         if block_index in graph.block_nodes:
+
             coords = [
                 (graph.nodes[j].lon, graph.nodes[j].lat)
                 for j in graph.block_nodes[block_index]
@@ -334,29 +338,22 @@ def point_in_any_polygon(point: Point, polygon: Polygon):
     return polygon.contains(point)
 
 
-def compute_people_per_block(graph, people_per_km2: float):
-    """
-    Computes estimated people per block using min and max arc lengths.
-
-    Args:
-        graph: An object with `block_arcs`, where each block_arcs[i] is a list of arcs with a `length` attribute.
-        people_per_km2: Density of people per km² (float).
-
-    Returns:
-        A NumPy array of estimated people per block (rounded up).
-    """
+def compute_people_per_block(graph, people_per_m2: float, coord_blocks: List):
     num_blocks = graph.b
     people_per_block = np.zeros(num_blocks, dtype=np.float64)
 
     for i in range(num_blocks):
-        lengths = [arc.length for arc in graph.block_arcs[i]]
-        if lengths:
-            min_len = min(lengths)
-            max_len = max(lengths)
-            area_est = max_len * min_len
-            people_per_block[i] = math.ceil(area_est * people_per_km2)
-        else:
-            people_per_block[i] = 0.0
+        area_m2 = 0.0
+        try:
+            gdf = gpd.GeoDataFrame(
+                index=[0], crs="EPSG:4326", geometry=[coord_blocks[i]]
+            )
+            gdf = gdf.to_crs(epsg=31983)  # EPSG:31983 = SIRGAS 2000 / UTM zone 23S
+            area_m2 = gdf.geometry.area.iloc[0]
+        except Exception as e:
+            logger.info(f"[*] Problem to compute area of block {i}: {e}")
+            area_m2 = 0.0
+        people_per_block[i] = math.ceil(area_m2 * people_per_m2)
 
     return people_per_block
 
