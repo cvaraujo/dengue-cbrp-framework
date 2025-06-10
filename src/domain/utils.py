@@ -421,7 +421,7 @@ def build_shapefile_path(city_key: str, map_size: int) -> str:
     return path
 
 
-def prepare_parameters(shp_path, exec_id, start_date, max_cycles, save_states):
+def prepare_parameters(shp_path, start_exec_id, exec_id, start_date, max_cycles, save_states, nebulize_solution=-1):
     return {
         "sqlite_ds": ("string", ""),
         "max_cycles": ("int", max_cycles),
@@ -429,8 +429,9 @@ def prepare_parameters(shp_path, exec_id, start_date, max_cycles, save_states):
         "use_initial_scenario": ("bool", True),
         "start_from_cycle": ("int", 0),
         "start_from_scenario": ("int", 0),
-        "start_from_execution_id": ("int", exec_id),
+        "start_from_execution_id": ("int", start_exec_id),
         "start_date_str": ("string", start_date),
         "execution_id": ("int", exec_id),
         "save_states": ("bool", save_states),
+        "solution_id": ("int", nebulize_solution),
     }

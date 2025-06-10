@@ -8,7 +8,7 @@ class Simulation:
     def __init__(
         self,
         server_path: str = "/home/carlos/Documentos/GAMA_1.9.2_Linux_with_JDK/headless/gama-headless.sh",
-        server_port: str = "6868",
+        server_port: str = "6869",
         model: str = "/home/carlos/Documentos/dengue-cbrp-framework/simulation/models/dengue_propagation.gaml",
     ):
         self.server_path = Path(server_path).resolve()
@@ -16,6 +16,8 @@ class Simulation:
         self.model = Path(model).resolve()
         self.websocket_url = f"ws://localhost:{self.server_port}"
         self._run_gama_headless_with_socket()
+        logger.info(f"[*] Connecting to GAMA WebSocket at {self.websocket_url}")
+
 
     async def _send_message(self, websocket, message: dict):
         msg = json.dumps(message)
@@ -86,14 +88,13 @@ class Simulation:
             logger.error(f"Error to start GAMA: {e}")
 
     def run_simulation(
-        self, parameters: list[dict], is_batch: bool = False, short: bool = False
+        self, parameters: list[dict], is_batch: bool = False, is_short: bool = False
     ):
-        logger.info(f"[*] Connecting to GAMA WebSocket at {self.websocket_url}")
         try:
-            asyncio.run(self._run(parameters, is_batch, short))
-            logger.info("[*] Simulation finished successfully.")
+            asyncio.run(self._run(parameters, is_batch, is_short))
         except Exception as e:
             logger.error(f"[!] Simulation failed: {e}")
+            exit(1)
 
     def is_gama_running(self, process_name: str = "gama-headless"):
         for proc in psutil.process_iter(attrs=["pid", "name"]):

@@ -82,3 +82,9 @@ class PostgreSQLAdapter:
         if len(records) > 0:
             self.conn.execute(query, records)
             self.conn.commit()
+
+    def run_query_insert_solution(self, solution_id: int, blocks: List[int]):
+        query = text(f"INSERT INTO blocks_to_nebulize (solution_id, blocks) VALUES (:solution_id, :blocks)")
+        blocks_str = ",".join(str(b) for b in blocks)
+        self.conn.execute(query, {"solution_id": solution_id, "blocks": blocks_str})
+        self.conn.commit()

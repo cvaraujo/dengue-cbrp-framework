@@ -1,19 +1,15 @@
 from use_cases.deterministic_instance import *
-import logging, zmq, time
-import osmnx as ox
-from domain.osm import OpenStreetMap
-from use_cases.simulation_metrics import SimulationMetrics
-from adapters.osm.map_adapter import MapAdapter
+import logging, os, subprocess
+from use_cases.optimization.simheuristic import SimheuristicFramework
 
-# from use_cases.optimization.simheuristic import SimheuristicFramework
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
-ox.settings.use_cache = True
-logging.basicConfig(level=logging.INFO)
 # python3 -m venv .venv
 
 if __name__ == "__main__":
-    city_name: str = "Limoeiro do Norte, Ceará, Brasil"
-    map_size: int = 2000
+    city_name: str = "Alto Santo, Ceará, Brasil"
+    map_size: int = 700
     output_folder: str = "temp/simulation_metrics"
     run_params = {
         "city": city_name,
@@ -23,25 +19,35 @@ if __name__ == "__main__":
     }
 
     sim_params = {
-        "people_per_km2": 0.01,
-        "mosquitoes_per_person": 1.25,
-        "nb_breeding_sites": 50,
+        "people_per_km2": 0.008,
+        "mosquitoes_per_person": 0.5,
+        "nb_breeding_sites": 10,
         "proportion_infected_mosquitoes_without_cases": 0.15,
         "proportion_infected_mosquitoes_with_cases": 0.45,
     }
+
+
+    socket_str = "tcp://localhost:6969"
+    opt_params = {
+        "project_dir": "/home/carlos/Documentos/cbrp-methodologies/",
+        "executable_path": "/home/carlos/Documentos/cbrp-methodologies/cbrp-simheur",
+        "socket_str": socket_str
+    }
+
+
+    max_time_seconds = 30
+    elite_size = 5 
+    max_iters_with_surrogate = 10
+
+    sh = SimheuristicFramework(output_folder, run_params, sim_params, opt_params)
+    sh.run(socket_str, max_time_seconds, elite_size, max_iters_with_surrogate)
+    # sh.clear_run()
 
     # sim = SimulationMetrics(output_folder)
     # sim.compare_simulated_with_real_cases(
     #     city_name, map_size, "2017-01-08", 0, 0.01, 1.0, 50, 0.05, 0.4, 180
     # )
-    osm = OpenStreetMap(city_name, map_size)
-    graph: Graph = MapAdapter.convert_osm_to_graph(osm, True)
 
-    city_key, city_file = Utils.get_city_info(city_name)
-    coord_blocks = Utils.all_blocks_as_polygons(graph)
-
-    people_block = Utils.compute_people_per_block(graph, 0.0045, coord_blocks)
-    print(f"Total people: {sum(people_block)}")
     # infected, recovered = Utils.get_infected_recovered_people_per_block(
     #     cases, graph, datetime.strptime(start_date, "%Y-%m-%d"), coord_blocks
     # )

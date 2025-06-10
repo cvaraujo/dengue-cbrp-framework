@@ -1,4 +1,4 @@
-import os
+import os, zmq, subprocess, time, heapq, threading
 import numpy as np
 from typing import List
 from datetime import datetime
@@ -11,6 +11,33 @@ from adapters.sql.postgree import PostgreSQLAdapter
 from use_cases.simulation import Simulation
 from use_cases.scenario_generation import ScenarioGeneration
 import domain.utils as Utils
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+
+class Solution:
+    def __init__(self, blocks: list[int], deterministic_of: float, stochastic_of: float):
+        self._blocks = blocks
+        self._deterministic_of = deterministic_of
+        self._stochastic_of = stochastic_of
+
+    def __str__(self):
+        return f"Solution(blocks={self._blocks}, deterministic_of={self._deterministic_of}, stochastic_of={self._stochastic_of})"
+    
+    def get_blocks(self) -> list[int]:
+        return self._blocks
+    
+    def get_deterministic_of(self) -> float:
+        return self._deterministic_of
+    
+    def set_stochastic_of(self, stochastic_of: float):
+        self._stochastic_of = stochastic_of
+
+    def get_stochastic_of(self) -> float:
+        return self._stochastic_of
+    
+    def __lt__(self, other):
+        return self._deterministic_of > other.get_deterministic_of()
 
 
 class SimheuristicFramework:
@@ -28,6 +55,12 @@ class SimheuristicFramework:
         self._exec_id = 0
         self._simulation = Simulation()
         self._db = PostgreSQLAdapter()
+        self._scenarios: List[List[int]] = []
+        self._best_deterministic_solution = None
+        self._elite_stochastic_solutions = []
+        self._run_id = 0
+        self._use_surrogate_model = True
+        self._alpha = 0.8
 
     def _get_sim_param(self, param_key: str):
         try:
@@ -38,7 +71,7 @@ class SimheuristicFramework:
 
     def _get_opt_param(self, param_key: str):
         try:
-            param = self._sim_params[param_key]
+            param = self._opt_params[param_key]
             return param
         except KeyError:
             logger.warning(f"[!] Optimization parameter {param_key} not found!")
@@ -50,38 +83,127 @@ class SimheuristicFramework:
         except KeyError:
             logger.warning(f"[!] Run parameter {param_key} not found!")
 
-    def _call_optimization(self):
-        pass
+    def _start_optimization_executable(self):
+        try:
+            project_dir: str = self._get_opt_param("project_dir")
+            subprocess.run(["cmake", project_dir], check=True, cwd=project_dir)
+            subprocess.run(["make", "-C", project_dir, "cbrp-simheur", "-j"], check=True, cwd=project_dir)
+            
+            binary_path: str = self._get_opt_param("executable_path")
+            socket_str: str = self._get_opt_param("socket_str")
+            input_graph: str = os.path.abspath(os.path.join(self._output_folder, "graph.txt"))
 
-    def _call_parallel_optimization(self):
-        pass
+            process = subprocess.Popen(
+                [binary_path, input_graph, "150", socket_str],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            
+            # Start async output monitoring
+            def monitor_output(pipe, prefix):
+                for line in iter(pipe.readline, ''):
+                    if line:
+                        logger.info(f"{prefix}: {line.strip()}")
+            
+            stdout_thread = threading.Thread(target=monitor_output, args=(process.stdout, "STDOUT"))
+            stdout_thread.daemon = True
+            stdout_thread.start()
+        except Exception as e:
+            logger.error(f"[!] Error starting optimization executable: {e}")
+            exit(1)
+        
+    def _call_optimization(self, action: str = "run") -> Solution | None:
+        message = action
+        if action == "load":
+            message += f":{self._run_id}"
 
-    def _call_simulation(self, max_cycles: int, is_batch: bool = False):
+        logger.info(f"[*] Preparing to send message to optimization: {message}")
+
+        for attempt in range(1, self._socket_max_retries + 1):
+            try:
+                logger.info(f"[*] Attempt {attempt}: sending message '{message}'")
+                self._socket.send_string(message)
+
+                logger.info("[*] Waiting for response...")
+                reply = self._socket.recv_string()
+
+                logger.info(f"[*] Received response from optimization: {reply}")
+                response: list[str] = reply.split(":")
+                solution = None
+
+                if response[0] == "solution":
+                    sol_blocks: list[int] = [int(b) for b in response[1].split(",")]
+                    sol_det_of: float = float(response[2])
+                    solution = Solution(sol_blocks, sol_det_of, 0.0)
+
+                return solution
+
+            except zmq.Again:
+                logger.warning(f"[!] Timeout waiting for response (attempt {attempt})")
+                time.sleep(self._socket_retry_interval)
+            except zmq.ZMQError as e:
+                logger.error(f"[!] ZMQ Error: {e}")
+
+        logger.error("[!] Failed to receive response from optimization after multiple attempts.")
+        return None
+
+    def _compute_start_scenarios(self):
+        self._run_id += 1
+        self._call_simulation(max_cycles=14, is_batch=True, is_short=False)
+        scenarios: List[List[int]] = self._get_scenario_cases_per_block()
+        self._scenarios.extend(scenarios)
+        self._use_surrogate_model = True
+
+    def _evaluate_deterministic_solution(self, solution: Solution) -> float:
+        selected_scenarios: List[List[int]] = []
+        if (self._use_surrogate_model):
+            random_scenarios = np.random.choice(len(self._scenarios), 10, replace=False)
+            selected_scenarios = [self._scenarios[i] for i in random_scenarios]
+        else:
+            self._run_id += 1
+            self._call_simulation(max_cycles=14, is_batch=True, is_short=True)
+            selected_scenarios: List[List[int]] = self._get_scenario_cases_per_block()
+            self._scenarios.extend(selected_scenarios)
+            self._call_optimization(action="load")
+            self._use_surrogate_model = True
+        
+        stochastic_of = self._get_stochastic_value(solution, selected_scenarios)
+        solution.set_stochastic_of(stochastic_of)
+        return stochastic_of
+
+    def _get_stochastic_value(self, solution: Solution, scenarios: List[List[int]]):
+        stochastic_of: int = 0;
+        num_scenarios: int = len(scenarios)
+        for block in solution.get_blocks():
+            for scenario in scenarios:
+                cases: int = scenario[block]
+                if (cases > 0):
+                    stochastic_of += self._alpha * cases
+
+        return (stochastic_of / num_scenarios)
+
+    def _call_simulation(self, max_cycles: int, is_batch: bool = False, is_short: bool = True, nebulize_solution: int = -1):
         logger.info("[*] Running Simulation...")
         start_date = self._get_run_param("start_date")
 
         params = Utils.prepare_parameters(
             self._shp_path,
             self._exec_id,
+            self._run_id,
             start_date,
             max_cycles=max_cycles,
             save_states=is_batch,
+            nebulize_solution=nebulize_solution
         )
 
         header = JsonAdapter.convert_param_2_list(params)
-        self._simulation.run_simulation(header, is_batch=is_batch)
-
-    def _call_short_simulation(self):
-        self._call_simulation(14, is_batch=True)
-
-    def _call_extensive_simulation(self):
-        # Call simulation several times and append results before call again
-        self._call_simulation(14, is_batch=True)
+        self._simulation.run_simulation(header, is_batch=is_batch, is_short=is_short)
 
     def _get_scenario_cases_per_block(self) -> List[List[int]]:
         logger.info("[*] Extracting and aggregating simulated cases...")
         sim_cases = self._db.query(
-            f"SELECT * FROM metrics_infected_people WHERE execution_id = {self._exec_id}"
+            f"SELECT * FROM metrics_infected_people WHERE execution_id = {self._run_id}"
         ).drop_duplicates(subset=["id"])
 
         grouped = sim_cases.groupby(
@@ -100,37 +222,6 @@ class SimheuristicFramework:
         ]
 
         return all_scenarios
-
-    def _write_scenarios_2_optimization(self, scenarios: List):
-        num_scenarios = len(scenarios)
-        map_size = self._get_run_param("map_size")
-        city_key = self._get_run_param("city")
-        _, city_file = Utils.get_city_info(city_key)
-
-        scenario_file = os.path.join(
-            self._output_folder, f"scenarios-{city_file}-{map_size}-{self._exec_id}.txt"
-        )
-
-        B = self._graph.b
-        prob_scn: float = 1.0 / num_scenarios
-        with open(scenario_file, "w") as file:
-            file.write(f"{num_scenarios}\n")
-
-            for i, scenario in enumerate(scenarios):
-                file.write(f"P {i} {prob_scn:.3f}\n")
-
-                for b in range(B):
-                    count = scenario[b]
-                    if count > 0:
-                        file.write(f"B {i} {b} {count}\n")
-                    elif count < 0:
-                        raise ValueError(
-                            f"[!] Block {b} in scenario {i} has a negative number of cases"
-                        )
-
-    def _write_scenarios(self):
-        scenarios = self._get_scenario_cases_per_block()
-        self._write_scenarios_2_optimization(scenarios)
 
     def _compute_metrics(self):
         pass
@@ -154,7 +245,7 @@ class SimheuristicFramework:
                 if infected > 0:
                     file.write(f"B {i} {infected}\n")
 
-    def _create_base_solution(self):
+    def _create_base_environment(self):
         logger.info("[*] Clearing old data...")
         self._db.clear_database()
 
@@ -175,7 +266,7 @@ class SimheuristicFramework:
         logger.info("[*] Processing blocks and population data...")
         people_per_km2 = self._get_sim_param("people_per_km2")
         coord_blocks = Utils.all_blocks_as_polygons(self._graph)
-        people_block = Utils.compute_people_per_block(self._graph, people_per_km2)
+        people_block = Utils.compute_people_per_block(self._graph, people_per_km2, coord_blocks)
         self._infected_per_block, recovered = (
             Utils.get_infected_recovered_people_per_block(
                 cases,
@@ -224,12 +315,133 @@ class SimheuristicFramework:
         # Set starting scenario in GAMA
         self._call_simulation(max_cycles=0, is_batch=False)
 
-    def run(self):
-        self._create_base_solution()
-        self._write_graph(os.path.join(self._output_folder, "graph.txt"))
-        self._call_short_simulation()
-        # self._write_scenarios()
-
     def clear_run(self):
         self._db.clear_database()
         self._simulation.kill_gama_headless()
+
+    def risk_analysis(self):
+        boxplot_data = []
+
+        for solution in self._elite_stochastic_solutions:
+            self._run_id += 1
+            self._call_simulation(max_cycles=14, is_batch=True, is_short=False)
+
+            scenarios: List[List[int]] = self._get_scenario_cases_per_block()
+            scenario_sums = [sum(s) for s in scenarios]
+
+            self._run_id += 1
+            self._db.run_query_insert_solution(self._run_id, solution.get_blocks())
+            self._call_simulation(max_cycles=14, is_batch=True, is_short=False, nebulize_solution=self._run_id)
+
+            nebulized_scenarios: List[List[int]] = self._get_scenario_cases_per_block()
+            nebulized_scenario_sums = [sum(s) for s in nebulized_scenarios]
+
+            stochastic_of = self._get_stochastic_value(solution, scenarios)
+            solution.set_stochastic_of(stochastic_of)
+
+            # Organiza os dados no formato longo (long format)
+            for orig, nebu in zip(scenario_sums, nebulized_scenario_sums):
+                boxplot_data.append({
+                    "stochastic_of": round(stochastic_of, 4),  # evita problemas com float como chave
+                    "value": orig,
+                    "type": "Original"
+                })
+                boxplot_data.append({
+                    "stochastic_of": round(stochastic_of, 4),
+                    "value": nebu,
+                    "type": "Nebulized"
+                })
+
+        # heapq.heapify(self._elite_stochastic_solutions)
+
+        df = pd.DataFrame(boxplot_data)
+        plt.figure(figsize=(18, 9))
+        sns.boxplot(
+            x="stochastic_of",
+            y="value",
+            hue="type",
+            data=df,
+            palette={"Original": "skyblue", "Nebulized": "salmon"},
+            dodge=True,
+            gap=0.1,
+            width=0.3
+        )
+        plt.xlabel("Stochastic Objective Function Value")
+        plt.ylabel("Scenario Total Cases")
+        plt.title("Risk Analysis: Distribution of Scenario Sums by Stochastic OF")
+        plt.xticks()
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
+        plt.legend(title="Scenario Type")
+        plt.tight_layout()
+        plt.savefig("risk_analysis_boxplot.png")
+        plt.close()
+
+    def run(self, socket_str: str, max_time_seconds: int = 120, elite_size: int = 10, max_iters_with_surrogate: int = 50):
+        self._create_base_environment()
+        self._start_optimization_executable()
+
+        # Socket configuration
+        self._socket_str = socket_str
+        self._context = zmq.Context()
+        self._socket = self._context.socket(zmq.REQ)
+        self._socket.connect(self._socket_str)
+        self._socket_max_retries = 10
+        self._socket_retry_interval = 1
+        self._socket.setsockopt(zmq.RCVTIMEO, 1000)
+        self._socket.setsockopt(zmq.LINGER, 0)
+        
+        iterations = 0
+
+        logger.info("[*] Generating start scenarios (Long Simulation of 14 cycles)...")
+        self._compute_start_scenarios()
+
+        logger.info("[*] Computing first solution...")
+        start_solution = self._call_optimization()
+
+        if (start_solution is None):
+            logger.error("[!] Failed to receive response from optimization after multiple attempts.")
+            return
+
+        logger.info("[*] Evaluating first solution...")
+        self._evaluate_deterministic_solution(start_solution)
+        self._best_deterministic_solution = start_solution
+        heapq.heappush(self._elite_stochastic_solutions, start_solution)
+
+        logger.info("[*] Starting the First Stage...")
+        start_time = time.time()
+        elapsed_time: float = 0.0
+
+        while elapsed_time < max_time_seconds:
+            opt_start_time = time.time()
+            new_det_solution = self._call_optimization(action="run")
+            
+            if (new_det_solution is None):
+                logger.error("[!] Failed to receive response from optimization after multiple attempts.")
+                return
+
+            logger.info(f"Optimization time: {time.time() - opt_start_time:.2f} seconds")
+
+            eval_start_time = time.time()
+            stochastic_of = self._evaluate_deterministic_solution(new_det_solution)
+            logger.info(f"Evaluation time: {time.time() - eval_start_time:.2f} seconds")
+    
+            if (stochastic_of > self._best_deterministic_solution.get_stochastic_of()):
+                self._best_deterministic_solution = new_det_solution
+                heapq.heappush(self._elite_stochastic_solutions, new_det_solution)  
+
+                if (len(self._elite_stochastic_solutions) > elite_size):
+                    heapq.heappop(self._elite_stochastic_solutions)
+
+            iterations += 1
+            if (iterations >= max_iters_with_surrogate):
+                self._use_surrogate_model = False
+                iterations = 0
+            
+            elapsed_time = time.time() - start_time
+            logger.info(f"Elapsed time in iteration {iterations}: {elapsed_time:.2f} seconds")
+        
+        self.risk_analysis()
+        # Clean up
+        # self._socket.close()    
+        # self._context.term()
+            
