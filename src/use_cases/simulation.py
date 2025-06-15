@@ -1,5 +1,4 @@
 import asyncio, json, websockets, psutil, subprocess
-from math import e
 from venv import logger
 from pathlib import Path
 
@@ -14,7 +13,7 @@ class Simulation:
         self.server_path = Path(server_path).resolve()
         self.server_port = server_port
         self.model = Path(model).resolve()
-        self.websocket_url = f"ws://localhost:{self.server_port}"
+        self.websocket_url = f"ws://localhost:{server_port}"
         self._run_gama_headless_with_socket()
         logger.info(f"[*] Connecting to GAMA WebSocket at {self.websocket_url}")
 

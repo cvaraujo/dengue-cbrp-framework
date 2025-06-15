@@ -96,7 +96,6 @@ class SimheuristicFramework:
             process = subprocess.Popen(
                 [binary_path, input_graph, "150", socket_str],
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
                 text=True,
             )
             
@@ -147,6 +146,24 @@ class SimheuristicFramework:
 
         logger.error("[!] Failed to receive response from optimization after multiple attempts.")
         return None
+
+    def _check_optimization_status(self):
+        try:
+            self._socket.send_string("check_conn")
+            while True:
+                reply = self._socket.recv_string()
+                if reply == "connected":
+                    logger.info("[*] Optimization executable connected successfully")
+                    return True
+                else:
+                    logger.warning(f"[!] Unexpected message while waiting for 'connected': {reply}")
+                    time.sleep(1)
+        except zmq.ZMQError as e:
+            logger.error(f"[!] ZMQ Error while waiting for 'connected': {e}")
+            return
+        except Exception as e:
+            logger.error(f"[!] Error checking optimization status: {e}")
+            return
 
     def _compute_start_scenarios(self):
         self._run_id += 1
@@ -390,13 +407,15 @@ class SimheuristicFramework:
         self._socket.setsockopt(zmq.RCVTIMEO, 1000)
         self._socket.setsockopt(zmq.LINGER, 0)
         
-        iterations = 0
-
         logger.info("[*] Generating start scenarios (Long Simulation of 14 cycles)...")
         self._compute_start_scenarios()
 
         logger.info("[*] Computing first solution...")
-        start_solution = self._call_optimization()
+        if self._check_optimization_status():
+            start_solution = self._call_optimization()
+        else:
+            logger.error("[!] Optimization executable not connected after multiple attempts.")
+            return
 
         if (start_solution is None):
             logger.error("[!] Failed to receive response from optimization after multiple attempts.")
@@ -410,7 +429,8 @@ class SimheuristicFramework:
         logger.info("[*] Starting the First Stage...")
         start_time = time.time()
         elapsed_time: float = 0.0
-
+        iterations = 0
+        
         while elapsed_time < max_time_seconds:
             opt_start_time = time.time()
             new_det_solution = self._call_optimization(action="run")

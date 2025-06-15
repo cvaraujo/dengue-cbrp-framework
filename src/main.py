@@ -38,10 +38,10 @@ if __name__ == "__main__":
     max_time_seconds = 30
     elite_size = 5 
     max_iters_with_surrogate = 10
-
+    
     sh = SimheuristicFramework(output_folder, run_params, sim_params, opt_params)
     sh.run(socket_str, max_time_seconds, elite_size, max_iters_with_surrogate)
-    # sh.clear_run()
+    sh.clear_run()
 
     # sim = SimulationMetrics(output_folder)
     # sim.compare_simulated_with_real_cases(
