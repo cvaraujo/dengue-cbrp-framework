@@ -1,9 +1,28 @@
-from simulation_metrics import SimulationMetrics
+from use_cases.simulation_metrics import *
 
 class Experiments:
+    """
+    Class to run experiments on the dengue propagation simulation.
+    """
 
-    def __init__(self):
-        self.output_folder: str = "../experiments/"
+    def __init__(self, output_folder: str = "../experiments/", city_name: str = "Alto Santo, Ceará, Brasil", map_size: int = 700, start_date: str = "2020-07-05"):
+        self.output_folder = output_folder
+        self.city_name = city_name
+        self.map_size = map_size
+        self.start_date = start_date
+        self.params = {
+            "execution_id": ("int", 0),
+            "nb_people": ("int", 8100),
+            "nb_infected_people": ("int", 900),
+            "nb_mosquitoes": ("int", 4050),
+            "nb_infected_mosquitoes": ("int", 450),
+            "nb_breeding_sites": ("int", 50),
+            "kill_mosquitoes": ("bool", False),
+            "nb_blocks_to_kill": ("int", 20),
+            "mosquitoes_oviposition_rate": ("float", 0.02),
+            "mosquitoes_death_rate": ("float", 0.01),
+            "simulation_seed": ("float", 0.0)
+        }
         self.simulation_metrics = SimulationMetrics(self.output_folder)
 
     def oviposition_experiment(self):
@@ -22,20 +41,24 @@ class Experiments:
         ]
 
         for i in range(len(oviposition_values)):
-            # parameters["mosquitoes_oviposition_rate"] = ("float", oviposition_values[i])
-            # parameters["execution_id"] = ("int", i)
+            self.params["mosquitoes_oviposition_rate"] = ("float", oviposition_values[i])
+            self.params["execution_id"] = ("int", i)
 
-            # quali_run_simulation(city, db, parameters, start_date, i, inital_nb_infected, img_output * experiment_name)
-            pass
+            result = self.simulation_metrics.run_stochastic_instance_simulation(
+                self.city_name,
+                self.map_size,
+                self.start_date,
+                i,
+                self.params
+            )
         
-        self.simulation_metrics.plot_multiple_cases(
-            None,
-            None,
-            None,
-            output_file,
-            len(oviposition_values),
-            style_dict,
-        )
+        if result:
+            self.simulation_metrics.plot_multiple_cases(
+                self.params["nb_infected_people"],
+                output_file,
+                len(oviposition_values),
+                style_dict,
+            )
         
 
 

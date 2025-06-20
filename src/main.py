@@ -17,6 +17,13 @@ from shapely.geometry import Point
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+from use_cases.deterministic_instance import *
+import logging
+import osmnx as ox
+from use_cases.experiments import *
+
+ox.settings.use_cache = True
+logging.basicConfig(level=logging.INFO)
 # python3 -m venv .venv
 
 def get_infected_people_per_block(df: pd.DataFrame, graph: Graph, coord_blocks: List[Polygon]):
@@ -153,3 +160,8 @@ if __name__ == "__main__":
             f.write(f"Mean Absolute Error (MAE) between real and simulated cases per block: {mae:.2f}\n")
         else:
             f.write("MAE cannot be calculated: no real cases in any block.")
+
+
+    experiments = Experiments()
+    experiments.oviposition_experiment()
+

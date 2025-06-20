@@ -33,7 +33,7 @@ class SimulationMetrics:
         return "LIMOEIRO", "limoeiro"
 
     def _build_shapefile_path(self, city_key: str, map_size: int) -> str:
-        path = os.path.abspath(f"./includes/{city_key}_{map_size}")
+        path = os.path.abspath(f"dengue-cbrp-framework/src/includes/{city_key}_{map_size}")
         os.makedirs(path, exist_ok=True)
         return path
 
@@ -53,6 +53,42 @@ class SimulationMetrics:
             "save_states": ("bool", save_states),
         }
 
+    def run_stochastic_instance_simulation(
+        self,
+        city: str,
+        map_size: int,
+        start_date: str,
+        exec_id: int,
+        additional_params: dict = None
+    ):
+        logger.info("[*] Clearing data from database...")
+        self.db.clear_database()
+
+        logger.info(f"[*] Loading OSM map: {city} ({map_size})...")
+        osm = OpenStreetMap(city, map_size)
+        graph: Graph = MapAdapter.convert_osm_to_graph(osm, True)
+
+        city_key, city_file = self._get_city_info(city)
+
+        logger.info("[*] Exporting SHP files...")
+        shp_path = self._build_shapefile_path(city_key, map_size)
+        MapAdapter.export_osm_to_shapefile(osm, graph, shp_path)
+
+        sim: Simulation = Simulation()
+        params = self._prepare_parameters(
+           shp_path, exec_id, start_date, max_cycles=60, save_states=False
+        )
+        params.update(additional_params or {})
+        
+        logger.info("[*] Running batch simulation...")
+        result = sim.run_simulation(JsonAdapter.convert_param_2_list(params), is_batch=False)
+        
+        if result:
+            logger.info("[*] Simulation completed.")
+
+        return result
+
+    
     def compare_simulated_with_real_cases(
         self,
         city: str,
@@ -338,8 +374,6 @@ class SimulationMetrics:
     def plot_multiple_cases(
         self,
         start_num_infected: int,
-        start_date: str,
-        city_key: str,
         filename: str,
         n_curves: int,
         style: dict
@@ -361,7 +395,6 @@ class SimulationMetrics:
 
             logger.info("[*] Processing simulated notifications...")
             df_sim["event_date"] = pd.to_datetime(df_sim["event_date"])
-            max_sim_date = df_sim["event_date"].max()
 
             df_sim["week_str"] = df_sim["event_date"].apply(
                 lambda d: Utils.last_day_of_week(d).strftime("%Y-%m-%d")
@@ -372,25 +405,6 @@ class SimulationMetrics:
                 df_sim.groupby(["week_str", "simulation_id"])
                 .size()
                 .reset_index(name="infected")
-            )
-
-            logger.info("[*] Processing real notifications...")
-            df_real = self.db.get_notifications_between_dates(
-                start_date, max_sim_date, city_key
-            )
-            df_real = df_real[
-                (df_real["classification"] != 5)
-                & df_real.apply(
-                    lambda row: any(
-                        poly.contains(Point(row["y"], row["x"])) for poly in coord_blocks
-                    ),
-                    axis=1,
-                )
-            ][["data_notification"]]
-
-            df_real["data_notification"] = pd.to_datetime(df_real["data_notification"])
-            df_real["week_str"] = df_real["data_notification"].apply(
-                lambda d: Utils.last_day_of_week(d).strftime("%Y-%m-%d")
             )
 
             logger.info("[*] Processing data to plot...")

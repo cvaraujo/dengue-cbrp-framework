@@ -1,29 +1,35 @@
+import os
 from typing import List
 from venv import logger
 import pandas as pd
 import logging
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
-
+from dotenv import load_dotenv
 from adapters.sql.queries import NOTIFICATIONS_BETWEEN_DATES_QUERY
 
 logging.basicConfig(level=logging.INFO)
+load_dotenv('dengue-cbrp-framework/src/.env')
 
 
 class PostgreSQLAdapter:
     def __init__(
         self,
-        host="localhost",
-        port=5432,
-        dbname="dengue-propagation",
-        user="postgres",
-        password="postgres",
+        host=os.getenv("PG-HOST", "localhost"),
+        port=os.getenv("PG-PORT", 5432),
+        dbname=os.getenv("PG-DBNAME", "dengue-propagation"),
+        user=os.getenv("PG-USER"),
+        password=os.getenv("PG-PASS"),
     ):
         self.database_url = (
             f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{dbname}"
         )
+        print(f"[*] Connecting to database: {self.database_url}")
+        
         self.engine: Engine = create_engine(self.database_url)
         self.conn = self.engine.connect()
+
+        print(self.conn)
         # self.close_all_idle_connections()
 
     def close(self):
@@ -41,12 +47,12 @@ class PostgreSQLAdapter:
         """
         )
         self.conn.execute(query, {"dbname": "dengue-propagation"})
-        self.conn.commit()
+        # self.conn.commit()
 
     def drop_table(self, table_name: str):
         query = text(f"DROP TABLE IF EXISTS {table_name}")
         self.conn.execute(query)
-        self.conn.commit()
+        # self.conn.commit()
 
     def get_notifications_between_dates(
         self, start_date: str, end_date: str, city: str
@@ -76,7 +82,7 @@ class PostgreSQLAdapter:
         ]:
             query = text(f"DELETE FROM {table}")
             self.conn.execute(query)
-        self.conn.commit()
+        # self.conn.commit()
 
     def run_query_with_records(self, query: str, records: List):
         if len(records) > 0:

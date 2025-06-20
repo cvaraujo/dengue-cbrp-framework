@@ -3,7 +3,8 @@ import os
 from venv import logger
 from pathlib import Path
 from dotenv import load_dotenv
-load_dotenv('../.env')
+
+load_dotenv('dengue-cbrp-framework/src/.env')
 
 class Simulation:
     def __init__(

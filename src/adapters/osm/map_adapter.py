@@ -4,7 +4,6 @@ from domain.osm import *
 from domain.graph import *
 from domain.utils import *
 
-
 class MapAdapter:
     @staticmethod
     def add_key_block_arc_attrs(osm: OpenStreetMap, graph: Graph):
@@ -19,7 +18,12 @@ class MapAdapter:
         try:
             os.makedirs(path, exist_ok=True)
             MapAdapter.add_key_block_arc_attrs(osm, graph)
-            gdf_nodes, gdf_arcs = ox.convert.graph_to_gdfs(osm.osm_map)
+            gdf_nodes, gdf_arcs = ox.graph_to_gdfs(osm.osm_map)
+            
+            cols_with_lists = ['osmid', 'highway', 'reversed', 'lanes']
+            for col in cols_with_lists:
+                gdf_arcs[col] = gdf_arcs[col].apply(lambda x: ','.join(map(str, x)) if isinstance(x, list) else x)
+            
             gdf_nodes.to_file(
                 path + "/nodes.shp", driver="ESRI Shapefile", encoding="utf-8"
             )
