@@ -6,9 +6,9 @@ from pathlib import Path
 class Simulation:
     def __init__(
         self,
-        server_path: str = "/home/carlos/Documentos/GAMA_1.9.2_Linux_with_JDK/headless/gama-headless.sh",
-        server_port: str = "6869",
-        model: str = "/home/carlos/Documentos/dengue-cbrp-framework/simulation/models/dengue_propagation.gaml",
+        server_path: str = "/external-libs/gama/headless/gama-headless.sh",
+        server_port: str = "6868",
+        model: str = "/app/simulation/models/dengue_propagation.gaml",
     ):
         self.server_path = Path(server_path).resolve()
         self.server_port = server_port

@@ -3,7 +3,7 @@ DROP TABLE IF EXISTS people;
 DROP TABLE IF EXISTS mosquitoes;
 DROP TABLE IF EXISTS breeding_sites;
 DROP TABLE IF EXISTS metrics;
--- DROP TABLE IF EXISTS cases;
+DROP TABLE IF EXISTS cases;
 
 CREATE TABLE people (
     execution_id INT NOT NULL,
@@ -94,12 +94,15 @@ CREATE TABLE blocks_to_nebulize (
   blocks TEXT
 );
 
-select * from blocks_to_nebulize;
+-- select * from blocks_to_nebulize;
+CREATE TABLE cases (
+    city VARCHAR(100),
+    data_notification DATE,
+    data_first_symptoms DATE,
+    classification VARCHAR(50),
+    x FLOAT,
+    y FLOAT
+);
 
--- SELECT pg_terminate_backend(pid)
--- FROM pg_stat_activity
--- WHERE pid <> pg_backend_pid()
---   AND datname = 'dengue-propagation'
---   AND state = 'idle';
-
--- COPY cases FROM '/tmp/sinan_cases.csv' WITH (FORMAT csv, HEADER true);
+COPY cases (city, data_notification, data_first_symptoms, classification, x, y)
+FROM '/app/simulation/data/sinan_cases.csv' WITH (FORMAT csv, HEADER true);

@@ -17,7 +17,7 @@ class PostgreSQLAdapter:
         port=5432,
         dbname="dengue-propagation",
         user="postgres",
-        password="07021997",
+        password="postgres",
     ):
         self.database_url = (
             f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{dbname}"

@@ -17,7 +17,7 @@ global {
      'database'::'dengue-propagation',
      'port'::'5432',
      'user'::'postgres',
-     'passwd'::'07021997'];
+     'passwd'::'postgres'];
      
 	// Step size
 	float step <- 12 #h;
@@ -484,6 +484,7 @@ global {
 			}
 		}
 		
+		write "Mosquitoes: " + string(length(Mosquitoes));
 		if fill_data {
 			write "[!] Fill Data in Start Scenario...";	
 			do update_start_scenario;
@@ -521,7 +522,8 @@ global {
 		if !file_exists(node_filename) or !file_exists(road_filename) {
 			do die;
 		}
-						
+		seed<-10.0;
+
 		// Vertex
 		create Vertices from: node_shapefile with: [osmid::string(read("osmid"))];
 		
@@ -1070,11 +1072,11 @@ experiment long_headless_dengue_propagation type: batch keep_seed: true until: (
 	parameter "Scenario number" var: start_from_scenario category: "int" init: 1;
 	parameter "Cycle number" var: start_from_cycle category: "int" init: 0;
 	parameter "Save" var: save_states category: "bool" init: false;
-	parameter "Nebulizer Efficiency" var: nebulizer_efficiency category: "float" init: 0.8;
+	parameter "Nebulizer Efficiency" var: nebulizer_efficiency category: "float" init: 1.0;
 	parameter "OPT Solution id" var: solution_id category: "int" init: 1;
 }
 
-experiment short_headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 10 {
+experiment short_headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 20 {
 	//
 	parameter "Type of execution" var: run_batch category: "bool" init: true;
 	parameter "Start Date" var: start_date_str category: "string" init: "2020-05-08";
@@ -1099,4 +1101,5 @@ experiment short_headless_dengue_propagation type: batch keep_seed: true until: 
 	parameter "Nebulizer Efficiency" var: nebulizer_efficiency category: "float" init: 0.8;
 	parameter "OPT Solution id" var: solution_id category: "int" init: 1;
 }
+
 

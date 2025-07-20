@@ -47,13 +47,15 @@ class SimheuristicFramework:
         run_params: dict,
         simulation_params: dict,
         optimization_params: dict,
+        simulation: Simulation,
+        stochastic_evaluation: str = "default",
     ):
         self._output_folder = output_folder
         self._sim_params = simulation_params
         self._opt_params = optimization_params
         self._run_params = run_params
         self._exec_id = 0
-        self._simulation = Simulation()
+        self._simulation = simulation
         self._db = PostgreSQLAdapter()
         self._scenarios: List[List[int]] = []
         self._best_deterministic_solution = None
@@ -61,6 +63,7 @@ class SimheuristicFramework:
         self._run_id = 0
         self._use_surrogate_model = True
         self._alpha = 0.8
+        self._stochastic_evaluation = stochastic_evaluation
 
     def _get_sim_param(self, param_key: str):
         try:
@@ -91,10 +94,11 @@ class SimheuristicFramework:
             
             binary_path: str = self._get_opt_param("executable_path")
             socket_str: str = self._get_opt_param("socket_str")
+            max_time_route: str = self._get_opt_param("max_time_route")
             input_graph: str = os.path.abspath(os.path.join(self._output_folder, "graph.txt"))
 
             process = subprocess.Popen(
-                [binary_path, input_graph, "150", socket_str],
+                [binary_path, input_graph, max_time_route, socket_str],
                 stdout=subprocess.PIPE,
                 text=True,
             )
@@ -175,7 +179,8 @@ class SimheuristicFramework:
     def _evaluate_deterministic_solution(self, solution: Solution) -> float:
         selected_scenarios: List[List[int]] = []
         if (self._use_surrogate_model):
-            random_scenarios = np.random.choice(len(self._scenarios), 10, replace=False)
+            num_scenarios_evaluation = self._get_sim_param("num_scenarios_evaluation")
+            random_scenarios = np.random.choice(len(self._scenarios), num_scenarios_evaluation, replace=False)
             selected_scenarios = [self._scenarios[i] for i in random_scenarios]
         else:
             self._run_id += 1
@@ -185,20 +190,45 @@ class SimheuristicFramework:
             self._call_optimization(action="load")
             self._use_surrogate_model = True
         
-        stochastic_of = self._get_stochastic_value(solution, selected_scenarios)
+        stochastic_of = 0.0
+        if self._stochastic_evaluation == "default":
+            stochastic_of = self._get_default_stochastic_value(solution, selected_scenarios)
+        elif self._stochastic_evaluation == "proportional":
+            stochastic_of = self._get_proportional_stochastic_value(solution, selected_scenarios)
+
         solution.set_stochastic_of(stochastic_of)
         return stochastic_of
 
-    def _get_stochastic_value(self, solution: Solution, scenarios: List[List[int]]):
-        stochastic_of: int = 0;
-        num_scenarios: int = len(scenarios)
-        for block in solution.get_blocks():
-            for scenario in scenarios:
-                cases: int = scenario[block]
-                if (cases > 0):
-                    stochastic_of += self._alpha * cases
+    def _get_default_stochastic_value(self, solution: Solution, scenarios: List[List[int]]):
+        stochastic_of: float = solution.get_deterministic_of();
+        probability: float = 1.0 / float(len(scenarios))
 
-        return (stochastic_of / num_scenarios)
+        for block in solution.get_blocks():
+            all_scenarios_cases: float = 0.0
+            for scenario in scenarios:
+                all_scenarios_cases += probability * scenario[block]
+            stochastic_of += self._alpha * all_scenarios_cases
+
+        return stochastic_of
+    
+    def _get_proportional_stochastic_value(self, solution: Solution, scenarios: List[List[int]]):
+        stochastic_of: float = solution.get_deterministic_of();
+        solution_blocks = solution.get_blocks()
+
+        for scenario in scenarios:
+            total_cases: float = 0
+            evited_cases: float = 0
+
+            for block, cases in enumerate(scenario):
+                total_cases += cases
+
+                if block in solution_blocks:
+                    evited_cases += cases
+
+            if evited_cases > 0:
+                stochastic_of += (total_cases / (evited_cases * self._alpha))
+
+        return stochastic_of
 
     def _call_simulation(self, max_cycles: int, is_batch: bool = False, is_short: bool = True, nebulize_solution: int = -1):
         logger.info("[*] Running Simulation...")
@@ -279,11 +309,12 @@ class SimheuristicFramework:
 
         logger.info("[*] Retrieving dengue cases...")
         cases = self._db.get_notifications_between_dates(start_date, end_date, city)
-
         logger.info("[*] Processing blocks and population data...")
         people_per_km2 = self._get_sim_param("people_per_km2")
+        
         coord_blocks = Utils.all_blocks_as_polygons(self._graph)
         people_block = Utils.compute_people_per_block(self._graph, people_per_km2, coord_blocks)
+        
         self._infected_per_block, recovered = (
             Utils.get_infected_recovered_people_per_block(
                 cases,
@@ -292,7 +323,6 @@ class SimheuristicFramework:
                 coord_blocks,
             )
         )
-
         self._write_graph(os.path.join(self._output_folder, "graph.txt"))
 
         logger.info("[*] Creating starting scenario into Database...")
@@ -334,18 +364,19 @@ class SimheuristicFramework:
 
     def clear_run(self):
         self._db.clear_database()
-        self._simulation.kill_gama_headless()
+        # self._simulation.kill_gama_headless()
 
+    # TODO: improve and add more analysis to generic output folder.
     def risk_analysis(self):
         boxplot_data = []
 
+        self._run_id += 1
+        self._call_simulation(max_cycles=14, is_batch=True, is_short=False)
+
+        scenarios: List[List[int]] = self._get_scenario_cases_per_block()
+        scenario_sums = [sum(s) for s in scenarios]
+
         for solution in self._elite_stochastic_solutions:
-            self._run_id += 1
-            self._call_simulation(max_cycles=14, is_batch=True, is_short=False)
-
-            scenarios: List[List[int]] = self._get_scenario_cases_per_block()
-            scenario_sums = [sum(s) for s in scenarios]
-
             self._run_id += 1
             self._db.run_query_insert_solution(self._run_id, solution.get_blocks())
             self._call_simulation(max_cycles=14, is_batch=True, is_short=False, nebulize_solution=self._run_id)
@@ -356,10 +387,11 @@ class SimheuristicFramework:
             stochastic_of = self._get_stochastic_value(solution, scenarios)
             solution.set_stochastic_of(stochastic_of)
 
-            # Organiza os dados no formato longo (long format)
+            logger.info(f"Det. OF: {solution.get_deterministic_of()}, Stochastic OF: {round(stochastic_of, 4)}")
+
             for orig, nebu in zip(scenario_sums, nebulized_scenario_sums):
                 boxplot_data.append({
-                    "stochastic_of": round(stochastic_of, 4),  # evita problemas com float como chave
+                    "stochastic_of": round(stochastic_of, 4),
                     "value": orig,
                     "type": "Original"
                 })
@@ -368,8 +400,6 @@ class SimheuristicFramework:
                     "value": nebu,
                     "type": "Nebulized"
                 })
-
-        # heapq.heapify(self._elite_stochastic_solutions)
 
         df = pd.DataFrame(boxplot_data)
         plt.figure(figsize=(18, 9))
@@ -381,7 +411,7 @@ class SimheuristicFramework:
             palette={"Original": "skyblue", "Nebulized": "salmon"},
             dodge=True,
             gap=0.1,
-            width=0.3
+            width=0.2
         )
         plt.xlabel("Stochastic Objective Function Value")
         plt.ylabel("Scenario Total Cases")
@@ -393,7 +423,7 @@ class SimheuristicFramework:
         plt.savefig("risk_analysis_boxplot.png")
         plt.close()
 
-    def run(self, socket_str: str, max_time_seconds: int = 120, elite_size: int = 10, max_iters_with_surrogate: int = 50):
+    def run(self, socket_str: str, max_time_seconds: int = 120, elite_size: int = 10, max_iters_with_surrogate: int = 100):
         self._create_base_environment()
         self._start_optimization_executable()
 
@@ -402,17 +432,17 @@ class SimheuristicFramework:
         self._context = zmq.Context()
         self._socket = self._context.socket(zmq.REQ)
         self._socket.connect(self._socket_str)
-        self._socket_max_retries = 10
+        self._socket_max_retries = 5
         self._socket_retry_interval = 1
         self._socket.setsockopt(zmq.RCVTIMEO, 1000)
         self._socket.setsockopt(zmq.LINGER, 0)
-        
-        logger.info("[*] Generating start scenarios (Long Simulation of 14 cycles)...")
-        self._compute_start_scenarios()
 
         logger.info("[*] Computing first solution...")
-        if self._check_optimization_status():
-            start_solution = self._call_optimization()
+        if self._check_optimization_status():            
+            logger.info("[*] Generating start scenarios (Long Simulation of 14 cycles)...")
+            self._compute_start_scenarios()
+            start_solution = self._call_optimization(action="load")
+            start_solution = self._call_optimization(action="run")
         else:
             logger.error("[!] Optimization executable not connected after multiple attempts.")
             return
@@ -460,8 +490,13 @@ class SimheuristicFramework:
             elapsed_time = time.time() - start_time
             logger.info(f"Elapsed time in iteration {iterations}: {elapsed_time:.2f} seconds")
         
+        self._call_optimization(action="stop")
+        
+        risk_start_time = time.time()
         self.risk_analysis()
+        logger.info(f"Risk analysis time: {time.time() - risk_start_time:.2f} seconds")
+
         # Clean up
-        # self._socket.close()    
-        # self._context.term()
+        self._socket.close()    
+        self._context.term()
             
