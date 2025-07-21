@@ -51,7 +51,11 @@ default_connection_params = {
     }
 }
 
-# run example: 
+# local run example: 
+# python3 src/main.py local default 20 10 500 AS 700 2017-01-08 2017-01-15 /home/carlos/Documentos/dengue-cbrp-framework/simheuristic_runs/run_DEFAULT_10_500_AS_700_2017-01-08_2017-01-15/
+
+# Docker run example: 
+# python3 src/main.py docker default 1800 10 500 AS 700 2017-01-08 2017-01-15 /app/run_DEFAULT_10_500_AS_700_2017-01-08_2017-01-15/
 
 if __name__ == "__main__":
     args = sys.argv
@@ -64,7 +68,7 @@ if __name__ == "__main__":
     map_size = 700
     start_date = "2017-01-08"
     end_date = "2017-01-15"
-    output_folder = "temp/simulation_metrics"
+    output_folder = "/home/carlos/Documentos/dengue-cbrp-framework/temp/simulation_metrics"
     stochastic_evaluation = "default"
 
     if len(args) > 1:
@@ -80,6 +84,9 @@ if __name__ == "__main__":
         start_date = args[8] # 2017-01-08
         end_date = args[9] # 2017-01-15
         output_folder = args[10] # temp/simulation_metrics
+
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder, exist_ok=True)
 
     if city == "AS":
         sim_params = default_as_sim_params

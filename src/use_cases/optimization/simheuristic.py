@@ -226,7 +226,7 @@ class SimheuristicFramework:
                     evited_cases += cases
 
             if evited_cases > 0:
-                stochastic_of += (total_cases / (evited_cases * self._alpha))
+                stochastic_of += ((evited_cases * self._alpha)/total_cases)
 
         return stochastic_of
 
@@ -366,15 +366,30 @@ class SimheuristicFramework:
         self._db.clear_database()
         # self._simulation.kill_gama_headless()
 
-    # TODO: improve and add more analysis to generic output folder.
     def risk_analysis(self):
-        boxplot_data = []
+        boxplot_data, stats_data = [], []        
 
+        # Base scenario
         self._run_id += 1
         self._call_simulation(max_cycles=14, is_batch=True, is_short=False)
-
         scenarios: List[List[int]] = self._get_scenario_cases_per_block()
         scenario_sums = [sum(s) for s in scenarios]
+
+        for cs in scenario_sums:
+            boxplot_data.append({
+                "stochastic_of": "baseline", 
+                "value": cs,
+                "type": "Original"
+            })
+
+        stats_data.append({
+            "id": "Original",
+            "min": np.min(scenario_sums),
+            "max": np.max(scenario_sums),
+            "avg": np.mean(scenario_sums),
+            "deterministic_of": 0,
+            "stochastic_of": 0.0
+        })
 
         for solution in self._elite_stochastic_solutions:
             self._run_id += 1
@@ -384,25 +399,35 @@ class SimheuristicFramework:
             nebulized_scenarios: List[List[int]] = self._get_scenario_cases_per_block()
             nebulized_scenario_sums = [sum(s) for s in nebulized_scenarios]
 
-            stochastic_of = self._get_stochastic_value(solution, scenarios)
+            if self._stochastic_evaluation == "default":
+                stochastic_of = self._get_default_stochastic_value(solution, scenarios)
+            elif self._stochastic_evaluation == "proportional":
+                stochastic_of = self._get_proportional_stochastic_value(solution, scenarios)
+
             solution.set_stochastic_of(stochastic_of)
 
             logger.info(f"Det. OF: {solution.get_deterministic_of()}, Stochastic OF: {round(stochastic_of, 4)}")
 
-            for orig, nebu in zip(scenario_sums, nebulized_scenario_sums):
+            for nebu in nebulized_scenario_sums:
                 boxplot_data.append({
-                    "stochastic_of": round(stochastic_of, 4),
-                    "value": orig,
-                    "type": "Original"
-                })
-                boxplot_data.append({
-                    "stochastic_of": round(stochastic_of, 4),
+                    "stochastic_of": f"OF = {round(stochastic_of, 4)}",
                     "value": nebu,
                     "type": "Nebulized"
                 })
 
+            stats_data.append({
+                "id": "Nebulized",
+                "min": np.min(nebulized_scenario_sums),
+                "max": np.max(nebulized_scenario_sums),
+                "avg": np.mean(nebulized_scenario_sums),
+                "deterministic_of": solution.get_deterministic_of(),
+                "stochastic_of": stochastic_of
+            })
+
         df = pd.DataFrame(boxplot_data)
-        plt.figure(figsize=(18, 9))
+        num_solutions = max(1, len(self._elite_stochastic_solutions))
+        width = max(12, 4 * num_solutions)
+        plt.figure(figsize=(width, 9))
         sns.boxplot(
             x="stochastic_of",
             y="value",
@@ -413,6 +438,9 @@ class SimheuristicFramework:
             gap=0.1,
             width=0.2
         )
+        stats_df = pd.DataFrame(stats_data)
+        stats_df.to_csv(os.path.join(self._output_folder, "risk_analysis_stats.csv"), index=False)
+
         plt.xlabel("Stochastic Objective Function Value")
         plt.ylabel("Scenario Total Cases")
         plt.title("Risk Analysis: Distribution of Scenario Sums by Stochastic OF")
@@ -420,7 +448,7 @@ class SimheuristicFramework:
         plt.grid(axis='y', linestyle='--', alpha=0.7)
         plt.legend(title="Scenario Type")
         plt.tight_layout()
-        plt.savefig("risk_analysis_boxplot.png")
+        plt.savefig(os.path.join(self._output_folder, "risk_analysis_boxplot.png"))
         plt.close()
 
     def run(self, socket_str: str, max_time_seconds: int = 120, elite_size: int = 10, max_iters_with_surrogate: int = 100):
