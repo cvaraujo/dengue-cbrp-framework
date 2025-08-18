@@ -1,130 +1,155 @@
-from use_cases.deterministic_instance import *
+import math
 import logging, time
-from use_cases.optimization.simheuristic import SimheuristicFramework
-from use_cases.simulation import Simulation
-import sys
+from typing import List
+from shapely.geometry import Polygon
+import domain.utils as Utils
+from use_cases.simulation_metrics import SimulationMetrics
+import sys, os
+from domain.osm import OpenStreetMap
+from domain.graph import Graph
+from adapters.osm.map_adapter import MapAdapter
+from datetime import datetime, timedelta
+from adapters.sql.postgree import PostgreSQLAdapter
+import numpy as np
+import pandas as pd
+from shapely.geometry import Point
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 # python3 -m venv .venv
 
-default_as_sim_params = {
-    "people_per_km2": 0.01,
-    "mosquitoes_per_person": 1.0,
-    "nb_breeding_sites": 50,
-    "proportion_infected_mosquitoes_without_cases": 0.05,
-    "proportion_infected_mosquitoes_with_cases": 0.4,
-    "num_scenarios_evaluation": 20,
-}
+def get_infected_people_per_block(df: pd.DataFrame, graph: Graph, coord_blocks: List[Polygon]):
+    filtered_df = df[df["classification"] != 5]
 
-default_lm_sim_params = {
-    "people_per_km2": 0.006,
-    "mosquitoes_per_person": 0.8,
-    "nb_breeding_sites": 300,
-    "proportion_infected_mosquitoes_without_cases": 0.2,
-    "proportion_infected_mosquitoes_with_cases": 0.9,
-    "num_scenarios_evaluation": 20,
-}
+    num_blocks = graph.b
+    infected = np.zeros(num_blocks, dtype=int)
 
-city_info_map = {
-    "AS": "Alto Santo, Ceará, Brasil",
-    "LM": "Limoeiro do Norte, Ceará, Brasil",
-}
+    for _, row in filtered_df.iterrows():
+        y, x = float(row["y"]), float(row["x"])
+        point: Point = Point(y, x)
 
-default_connection_params = {
-    "local": {
-        "socket_str": "tcp://localhost:2021",
-        "project_dir": "/home/carlos/Documentos/cbrp-methodologies/",
-        "executable_path": "/home/carlos/Documentos/cbrp-methodologies/cbrp-simheur",
-        "server_path": "/home/carlos/Documentos/GAMA_1.9.2_Linux_with_JDK/headless/gama-headless.sh",
-        "server_port": "6868",
-        "model": "/home/carlos/Documentos/dengue-cbrp-framework/simulation/models/dengue_propagation.gaml",
-    },
-    "docker": {
-        "socket_str": "tcp://0.0.0.0:2021",
-        "project_dir": "/external-libs/simheuristic/cbrp-simheuristic/",
-        "executable_path": "/external-libs/simheuristic/cbrp-simheuristic/cbrp-simheur",
-        "server_path": "/external-libs/gama/headless/gama-headless.sh",
-        "server_port": "6868",
-        "model": "/app/simulation/models/dengue_propagation.gaml",
-    }
-}
+        for i, polygon in enumerate(coord_blocks):
+            if polygon.contains(point):
+                infected[i] += 1
 
-# local run example: 
-# python3 src/main.py local default 20 10 500 AS 700 2017-01-08 2017-01-15 /home/carlos/Documentos/dengue-cbrp-framework/simheuristic_runs/run_DEFAULT_10_500_AS_700_2017-01-08_2017-01-15/
+    return infected
 
-# Docker run example: 
-# python3 src/main.py docker default 1800 10 500 AS 700 2017-01-08 2017-01-15 /app/run_DEFAULT_10_500_AS_700_2017-01-08_2017-01-15/
 
+def get_infected_simulated_people_per_block(df: pd.DataFrame, graph: Graph, coord_blocks: List[Polygon]):
+    num_blocks = graph.b
+    infected = np.zeros(num_blocks, dtype=int)
+
+    # Group by living_place and sum the infected_people for each block
+    df_aux = df.groupby("living_place")["infected_people"].mean().reset_index()
+    df_aux["living_place"] = df_aux["living_place"].astype(int)
+    df_aux["infected_people"] = df_aux["infected_people"].astype(float)
+
+    for _, row in df_aux.iterrows():
+        living_place = int(row["living_place"])
+        if 0 <= living_place < num_blocks:
+            infected[living_place] = int(row["infected_people"])
+        else:
+            logger.warning(f"living_place index {living_place} out of bounds for infected array of size {num_blocks}")
+
+    return infected
+
+# python3 src/main.py simheuristic_runs/AS-20170108/ 2017-01-01 2017-01-08
 if __name__ == "__main__":
-    args = sys.argv
-    run_mode = "local"
-    default_route_time = "1200"
-    max_run_time = 1800
-    elite_size = 10
-    max_iters_with_surrogate = 500
-    city = "AS"
-    map_size = 700
-    start_date = "2017-01-08"
-    end_date = "2017-01-15"
-    output_folder = "/home/carlos/Documentos/dengue-cbrp-framework/temp/simulation_metrics"
-    stochastic_evaluation = "default"
-
-    if len(args) > 1:
-        run_mode = args[1] # local or docker
-        # Simheuristic parameters
-        stochastic_evaluation = args[2] # default or proportional
-        max_run_time = int(args[3]) # 1800
-        elite_size = int(args[4]) # 10
-        max_iters_with_surrogate = int(args[5]) # 500
-        # Simulation/City parameters
-        city = args[6] # AS or LM
-        map_size = int(args[7]) # 700
-        start_date = args[8] # 2017-01-08
-        end_date = args[9] # 2017-01-15
-        output_folder = args[10] # temp/simulation_metrics
-
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder, exist_ok=True)
-
-    if city == "AS":
-        sim_params = default_as_sim_params
-    else:
-        sim_params = default_lm_sim_params
+    # output_folder: str = "simheuristic_runs/simulation_metrics/"
+    output_folder: str = sys.argv[1]
+    os.makedirs(output_folder, exist_ok=True)
+    sim_metrics: SimulationMetrics = SimulationMetrics(output_folder=output_folder)
     
-    city_name = city_info_map.get(city, "Alto Santo, Ceará, Brasil")
+    city: str = "Limoeiro do Norte, Ceará, Brasil"
+    map_size: int = 2000
+    logger.info(f"[*] Loading OSM map: {city} ({map_size})...")
+    osm: OpenStreetMap = OpenStreetMap(city, map_size)
 
-    run_params = {
-        "city": city_name,
-        "map_size": map_size,
-        "start_date": start_date,
-        "end_date": end_date,
-    }
+    graph: Graph = MapAdapter.convert_osm_to_graph(osm, True)
+    MapAdapter.export_osm_to_shapefile(osm, graph, f"{output_folder}/")
 
-    if run_mode == "local":
-        connection_params = default_connection_params["local"]
-    else:
-        connection_params = default_connection_params["docker"]
+    logger.info("[*] Retrieving dengue cases...")
+    prev_date: str = sys.argv[2] #"2020-07-12"
+    start_date: str = sys.argv[3] #"2020-07-19"
+    city_key: str = "LIMOEIRO"
+    start_datetime = datetime.strptime(start_date, "%Y-%m-%d")
 
-    socket_str = connection_params["socket_str"]
-    project_dir = connection_params["project_dir"]
-    executable_path = connection_params["executable_path"]
-    opt_params = {
-        "project_dir": project_dir,
-        "executable_path": executable_path,
-        "socket_str": socket_str,
-        "max_time_route": default_route_time
-    }
+    db: PostgreSQLAdapter = PostgreSQLAdapter()
 
-    server_path = connection_params["server_path"]
-    server_port = connection_params["server_port"]
-    model = connection_params["model"]
-    
-    start_time = time.time()
-    simulation = Simulation(server_path, server_port, model)
-    simheuristic = SimheuristicFramework(output_folder, run_params, sim_params, opt_params, simulation, stochastic_evaluation)
-    
-    simheuristic.run(socket_str, max_run_time, elite_size, max_iters_with_surrogate)
-    logger.info(f"Total time: {time.time() - start_time:.2f} seconds")
-    simheuristic.clear_run()
+    df = db.get_notifications_between_dates(
+        start_date, (datetime.strptime(start_date, "%Y-%m-%d") + timedelta(days=90)).strftime("%Y-%m-%d"), city_key
+    )
+
+    logger.info("[*] Processing blocks and population data...")
+    coord_blocks: List[Polygon] = Utils.all_blocks_as_polygons(graph)
+    infected = get_infected_people_per_block(df, graph, coord_blocks)
+    logger.info(f"Infected Real: {infected}")
+    # osm.plot_map_with_cases(infected, f"{output_folder}/osm_map_real_cases.png")
+
+    logger.info("[*] Comparing simulated with real cases...")
+    sim_metrics.compare_simulated_with_real_cases(
+        city=city,
+        map_size=map_size,
+        start_date=start_date,
+        exec_id=1,
+        people_per_m2=0.003,
+    )
+
+    logger.info("[*] Processing simulated cases...")
+    df_sim = db.query(
+        f"""
+        SELECT simulation_id, living_place, count(id) as infected_people
+        FROM metrics_infected_people
+        WHERE execution_id = {1}
+        GROUP BY simulation_id, living_place
+        """
+    )
+
+    infected_sim = get_infected_simulated_people_per_block(df_sim, graph, coord_blocks)
+    logger.info(f"Infected Simulated: {infected_sim}")
+    # osm.plot_map_with_cases(infected_sim, f"{output_folder}/osm_map_sim_cases.png")
+
+    logger.info("[*] Calculating metrics...")
+    within_range_exact = 0
+    within_range_plus_minus_one = 0
+    within_range_plus_minus_one_without_zero = 0
+    total_infectes_geq_zero = 0
+    for block, cases in enumerate(infected):
+        df_filt = df_sim[df_sim.living_place == block]
+        if len(df_filt) > 0:
+            min_sim = np.min(df_filt["infected_people"])
+            max_sim = np.max(df_filt["infected_people"])
+        else:
+            min_sim = 0
+            max_sim = 0
+
+        within_range_exact += 1 if cases >= (min_sim) and cases <= (max_sim) else 0
+        if cases > 0 or (min_sim == 0 and cases == 0):
+            total_infectes_geq_zero += 1
+            within_range_plus_minus_one += 1 if cases >= (min_sim) and cases <= (max_sim) else 0
+
+        if cases == 0:
+            within_range_plus_minus_one_without_zero += 1
+        else:
+            within_range_plus_minus_one_without_zero += 1 if cases >= (min_sim) and cases <= (max_sim) else 0
+
+    proportion_exact = ((within_range_exact / len(infected)) * 100)
+    proportion_excluding_outliers = ((within_range_plus_minus_one / total_infectes_geq_zero) * 100)
+    proportion_zero_cases = ((within_range_plus_minus_one_without_zero / len(infected)) * 100)
+
+    logger.info(f"Proportion of blocks (exact): {proportion_exact:.2f}%")
+    logger.info(f"Proportion of blocks (excluding outliers): {proportion_excluding_outliers:.2f}%")
+    logger.info(f"Proportion of blocks (zero cases): {proportion_zero_cases:.2f}%")
+
+    with open(f"{output_folder}/block_infected_proportions.txt", "w") as f:
+        f.write(f"Proportion of blocks (exact): {proportion_exact:.2f}%\n")
+        f.write(f"Proportion of blocks (excluding outliers): {proportion_excluding_outliers:.2f}%\n")
+        f.write(f"Proportion of blocks (zero cases): {proportion_zero_cases:.2f}%\n")
+
+        mask = (infected >= 0)
+        if np.any(mask):
+            mae = np.mean(np.abs(infected_sim[mask] - infected[mask]))
+            f.write(f"Mean Absolute Error (MAE) between real and simulated cases per block: {mae:.2f}\n")
+        else:
+            f.write("MAE cannot be calculated: no real cases in any block.")

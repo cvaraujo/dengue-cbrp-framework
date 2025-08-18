@@ -8,7 +8,7 @@ class Simulation:
         self,
         server_path: str = "/external-libs/gama/headless/gama-headless.sh",
         server_port: str = "6868",
-        model: str = "/app/simulation/models/dengue_propagation.gaml",
+        model: str = "/home/carlos/Documentos/dengue-cbrp-framework/simulation/models/dengue_propagation.gaml",
     ):
         self.server_path = Path(server_path).resolve()
         self.server_port = server_port

@@ -522,7 +522,6 @@ global {
 		if !file_exists(node_filename) or !file_exists(road_filename) {
 			do die;
 		}
-		seed<-10.0;
 
 		// Vertex
 		create Vertices from: node_shapefile with: [osmid::string(read("osmid"))];
@@ -1024,7 +1023,7 @@ experiment dengue_propagation type: gui until: (cycle >= max_cycles and end_simu
 	parameter "Number of infected mosquitoes agents" var: nb_infected_mosquitoes category: "int";
 	//
 	parameter "Mosquitoes move probability" var: mosquitoes_move_probability category: "float" init: 0.5;
-	parameter "Maximum radius" var: max_move_radius category: "int" init: 100 #m;
+	parameter "Maximum radius" var: max_move_radius category: "int" init: 50#m;
 	//
 	parameter "Start from data" var: use_initial_scenario category: "bool" init: true;
 	parameter "Execution number" var: start_from_execution_id category: "int" init: 1;
@@ -1065,7 +1064,7 @@ experiment long_headless_dengue_propagation type: batch keep_seed: true until: (
 	parameter "Number of infected mosquitoes agents" var: nb_infected_mosquitoes category: "int";
 	//
 	parameter "Mosquitoes move probability" var: mosquitoes_move_probability category: "float" init: 0.5;
-	parameter "Maximum radius" var: max_move_radius category: "int" init: 100 #m;
+	parameter "Maximum radius" var: max_move_radius category: "int" init: 50#m;
 	//
 	parameter "Start from data" var: use_initial_scenario category: "bool" init: true;
 	parameter "Execution number" var: start_from_execution_id category: "int" init: 1;
@@ -1091,7 +1090,7 @@ experiment short_headless_dengue_propagation type: batch keep_seed: true until: 
 	parameter "Number of infected mosquitoes agents" var: nb_infected_mosquitoes category: "int";
 	//
 	parameter "Mosquitoes move probability" var: mosquitoes_move_probability category: "float" init: 0.5;
-	parameter "Maximum radius" var: max_move_radius category: "int" init: 100 #m;
+	parameter "Maximum radius" var: max_move_radius category: "int" init: 50#m;
 	//
 	parameter "Start from data" var: use_initial_scenario category: "bool" init: true;
 	parameter "Execution number" var: start_from_execution_id category: "int" init: 1;

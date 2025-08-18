@@ -17,6 +17,7 @@ import domain.utils as Utils
 import numpy as np
 from datetime import timedelta, datetime
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 from scipy.stats import pearsonr
 from sklearn.metrics import mean_absolute_error
 
@@ -93,10 +94,11 @@ class SimulationMetrics:
             cases, graph, start_datetime, coord_blocks
         )
 
+        print(infected)
         starting_num_infected = np.sum(infected)
 
         logger.info(f"[*] Starting number of infected people {starting_num_infected}")
-        if starting_num_infected <= 5:
+        if starting_num_infected < 5:
             logger.error("[!] Not enough infected people to run the simulation.")
             return
 
@@ -318,14 +320,15 @@ class SimulationMetrics:
 
         logger.info("[*] Saving figure as PDF...")
         plt.figure(figsize=(10, 6))
-        plt.plot(weeks, real_y, label="", marker="o", linestyle="-", color="#36454F")
-        plt.plot(weeks, avg_y, label="", linestyle="--", color="#808080")
-        plt.scatter(sim_x, sim_y, label="", marker="x", color="#B2BEB5")
+        plt.plot(weeks, real_y, label="Real Cases", marker="o", linestyle="-", color="#36454F")
+        plt.plot(weeks, avg_y, label="Avg Simulated Cases", linestyle="--", color="#808080")
+        plt.scatter(sim_x, sim_y, label="Simulated Cases", marker="x", color="#B2BEB5")
 
         plt.xlabel("Weeks")
         plt.ylabel("Number of Notifications")
         plt.grid(True)
         plt.xticks(weeks)
+        plt.legend()  # Show the labels in the figure
         plt.tight_layout()
         plt.savefig(filename + ".pdf", format="pdf", bbox_inches="tight")
         plt.close()

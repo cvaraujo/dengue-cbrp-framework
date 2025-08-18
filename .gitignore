@@ -132,6 +132,10 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+*.csv
+*.pdf
+temp/*
+simheuristic_runs/*
 
 
 # Spyder project settings

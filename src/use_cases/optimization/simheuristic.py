@@ -424,7 +424,18 @@ class SimheuristicFramework:
                 "stochastic_of": stochastic_of
             })
 
-        df = pd.DataFrame(boxplot_data)
+        def stochastic_of_sort_key(x):
+            if x["stochastic_of"] == "baseline":
+                return float("-inf")
+            try:
+                if isinstance(x["stochastic_of"], str) and x["stochastic_of"].startswith("OF = "):
+                    return float(x["stochastic_of"].replace("OF = ", ""))
+                return float(x["stochastic_of"])
+            except Exception:
+                return float("inf")
+
+        boxplot_data_sorted = sorted(boxplot_data, key=stochastic_of_sort_key)
+        df = pd.DataFrame(boxplot_data_sorted)
         num_solutions = max(1, len(self._elite_stochastic_solutions))
         width = max(12, 4 * num_solutions)
         plt.figure(figsize=(width, 9))
