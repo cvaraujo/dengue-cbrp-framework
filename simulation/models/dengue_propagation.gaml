@@ -17,7 +17,7 @@ global {
      'database'::'dengue-propagation',
      'port'::'5432',
      'user'::'postgres',
-     'passwd'::'07021997'];
+     'passwd'::'postgres'];
      
 	// Step size
 	float step <- 12 #h;
@@ -113,7 +113,7 @@ global {
 	// Movement
 	float mosquitoes_move_probability <- 0.8;
 	// Oviposition capacity
-	int mosquitoes_max_carrying_capacity <- 2;
+	int mosquitoes_max_carrying_capacity <- 3;
 	// Max move distance
 	float max_move_radius <- 150.0 #m;
 	
@@ -122,21 +122,22 @@ global {
 	// ----------------------------------------------------------
 		
 	// Breeding Sites global parameters
-	float bs_eggs_to_mosquitoes <- 0.125; // 0.15 / 2
-	float bs_aquatic_phase_mortality_rate <- 0.066; // 0.05
+	float bs_eggs_to_mosquitoes <- 0.125;
+	float bs_aquatic_phase_mortality_rate <- 0.066;
 	
 	// ----------------------------------------------------------
 	// --------------- Logistics global parameters --------------
 	// ----------------------------------------------------------
-	float mosquito_insecticide_efficiency <- 0.7;
-	float bs_insecticide_efficiency <- 0.1;
+	float nebulizer_efficiency <- 0.8;
+	float bs_insecticide_efficiency <- 0.0;
+	int solution_id <- -1;
+	list<bool> need_nebulize;
 
 	// ----------------------------------------------------------
 	// -------------------- Global actions ----------------------
 	// ----------------------------------------------------------
 	reflex stop_simulation when: (start_from_cycle + cycle) >= max_cycles {
 		ask Saver {
-//			do close;
 			do die;
 		}
 		
@@ -184,7 +185,7 @@ global {
 			create Buildings from: [block_polygon] with: [id::id];
 		}
 		
-		save Buildings to: building_filename format: shp attributes: ["name", "id", "location"] crs: "EPSG:4326";
+		save Buildings to: building_filename attributes: ["name", "id", "location"] crs: "EPSG:4326";
 	}
 	
 	action create_starting_scenario {
@@ -237,12 +238,6 @@ global {
 	
 	action update_start_scenario {
 		int n <- 0;
-		
-//		ask Saver {
-//			if (!self.isConnected()) {
-//				do connect (params: POSTGRES);
-//			}
-//		}
 		
 		string delete_query <- "";
 		loop spc over: ["mosquitoes", "people", "breeding_sites", "eggs"] {
@@ -443,6 +438,10 @@ global {
 				float load_x <- float(mosquito[11]);
 				float load_y <- float(mosquito[12]);
 				
+				if (need_nebulize[load_building] and flip(nebulizer_efficiency)) {
+					continue;
+				}
+				
 				if (load_x = -1 or load_speed = -1.0 or load_building = -1) {
 					fill_data <- true;
 				}
@@ -485,9 +484,33 @@ global {
 			}
 		}
 		
+		write "Mosquitoes: " + string(length(Mosquitoes));
 		if fill_data {
 			write "[!] Fill Data in Start Scenario...";	
 			do update_start_scenario;
+		}
+	}
+	
+	action load_blocks_to_nebulize {
+		int num_blocks <- length(Buildings);
+		need_nebulize <- list_with(num_blocks, false);
+	
+		if solution_id != -1 {	
+			ask Saver {			
+				list<list> select_blocks <- self.select(
+					params: POSTGRES,
+					select: "SELECT blocks FROM blocks_to_nebulize where (solution_id=?);",
+					values:[solution_id]
+				);
+				
+				
+				loop blocks over: select_blocks[2] {
+					list<string> blocks_to_nebulize <- blocks[0] split_with ",";
+					loop b over: blocks_to_nebulize {
+						need_nebulize[int(b)] <- true;
+					}
+				}
+			}
 		}
 	}
 	
@@ -499,7 +522,7 @@ global {
 		if !file_exists(node_filename) or !file_exists(road_filename) {
 			do die;
 		}
-						
+
 		// Vertex
 		create Vertices from: node_shapefile with: [osmid::string(read("osmid"))];
 		
@@ -526,24 +549,16 @@ global {
 			create Buildings from: building_shapefile with: [name::read("name"), id::int(read("id")), location::read("location")];
 		}
 		
-		create Saver{}		
+		create Saver{}
+		do load_blocks_to_nebulize();
+		
 		if use_initial_scenario {
 			write "[!] Use Initial Scenario...";
-						
-//			ask Saver {
-//				if (!self.isConnected()) {
-//					do setParameter params: POSTGRES;
-//		            do connect params: POSTGRES;
-//				}
-//			}
 			write "[!] Load Starting Scenario...";			
 			do load_starting_scenario;
 		} else {
 			write "[!] Create Starting Scenario...";	
 			do create_starting_scenario;
-//			ask Saver {
-//				do connect(params: POSTGRES);
-//			}
 		}
 		
 		write "[!] Model is Loaded...";
@@ -555,7 +570,6 @@ species Eggs {
 	BreedingSites breeding_site;
 	// Deposited day
 	float deposited_days <- 0.0;
-	//
 	date deposited_date <- current_date;
 	
 	reflex turn_mosquito when: every(cycle) {
@@ -930,7 +944,7 @@ species Saver skills: [SQLSKILL] {
 		int cnt <- 1;
 		int nb <- People count ((each.state = 1) and (each.start_infected = false));
 		
-//		write "[SAVE]-> " + string(execution_id) + " - " + string(scenario_id) + " - " + string(start_from_cycle + cycle) + " => " + string(nb);
+		write "[SAVE]-> " + string(execution_id) + " - " + string(scenario_id) + " - " + string(start_from_cycle + cycle) + " => " + string(nb);
 		
 		ask People {
 			if self.state = 1 and self.start_infected = false {
@@ -1009,7 +1023,7 @@ experiment dengue_propagation type: gui until: (cycle >= max_cycles and end_simu
 	parameter "Number of infected mosquitoes agents" var: nb_infected_mosquitoes category: "int";
 	//
 	parameter "Mosquitoes move probability" var: mosquitoes_move_probability category: "float" init: 0.5;
-	parameter "Maximum radius" var: max_move_radius category: "int" init: 100 #m;
+	parameter "Maximum radius" var: max_move_radius category: "int" init: 50#m;
 	//
 	parameter "Start from data" var: use_initial_scenario category: "bool" init: true;
 	parameter "Execution number" var: start_from_execution_id category: "int" init: 1;
@@ -1034,6 +1048,7 @@ experiment dengue_propagation type: gui until: (cycle >= max_cycles and end_simu
 //	}
 }
 
+
 experiment long_headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 100 {
 	//
 	parameter "Type of execution" var: run_batch category: "bool" init: true;
@@ -1049,16 +1064,18 @@ experiment long_headless_dengue_propagation type: batch keep_seed: true until: (
 	parameter "Number of infected mosquitoes agents" var: nb_infected_mosquitoes category: "int";
 	//
 	parameter "Mosquitoes move probability" var: mosquitoes_move_probability category: "float" init: 0.5;
-	parameter "Maximum radius" var: max_move_radius category: "int" init: 100 #m;
+	parameter "Maximum radius" var: max_move_radius category: "int" init: 50#m;
 	//
 	parameter "Start from data" var: use_initial_scenario category: "bool" init: true;
 	parameter "Execution number" var: start_from_execution_id category: "int" init: 1;
 	parameter "Scenario number" var: start_from_scenario category: "int" init: 1;
 	parameter "Cycle number" var: start_from_cycle category: "int" init: 0;
 	parameter "Save" var: save_states category: "bool" init: false;
+	parameter "Nebulizer Efficiency" var: nebulizer_efficiency category: "float" init: 1.0;
+	parameter "OPT Solution id" var: solution_id category: "int" init: 1;
 }
 
-experiment short_headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 10 {
+experiment short_headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 20 {
 	//
 	parameter "Type of execution" var: run_batch category: "bool" init: true;
 	parameter "Start Date" var: start_date_str category: "string" init: "2020-05-08";
@@ -1073,12 +1090,13 @@ experiment short_headless_dengue_propagation type: batch keep_seed: true until: 
 	parameter "Number of infected mosquitoes agents" var: nb_infected_mosquitoes category: "int";
 	//
 	parameter "Mosquitoes move probability" var: mosquitoes_move_probability category: "float" init: 0.5;
-	parameter "Maximum radius" var: max_move_radius category: "int" init: 100 #m;
+	parameter "Maximum radius" var: max_move_radius category: "int" init: 50#m;
 	//
 	parameter "Start from data" var: use_initial_scenario category: "bool" init: true;
 	parameter "Execution number" var: start_from_execution_id category: "int" init: 1;
 	parameter "Scenario number" var: start_from_scenario category: "int" init: 1;
 	parameter "Cycle number" var: start_from_cycle category: "int" init: 0;
 	parameter "Save" var: save_states category: "bool" init: false;
+	parameter "Nebulizer Efficiency" var: nebulizer_efficiency category: "float" init: 0.8;
+	parameter "OPT Solution id" var: solution_id category: "int" init: 1;
 }
-
