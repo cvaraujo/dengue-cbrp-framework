@@ -12,13 +12,12 @@ global {
 	// ------------------- Simulation Config --------------------
 	// ----------------------------------------------------------
 	map<string, string> POSTGRES <- [
-     'host'::'localhost',
-     'dbtype'::'postgres',
-     'database'::'dengue-propagation',
-     'port'::'5432',
-     'user'::'postgres',
-     'passwd'::'postgres'];
-     
+		'host'::'localhost', 
+		'dbtype'::'postgres', 
+		'database'::'dengue-propagation', 
+		'port'::'5432', 
+		'user'::'emily'];
+		
 	// Step size
 	float step <- 12 #h;
 	// Start date string
@@ -34,6 +33,7 @@ global {
 	// Load data from old simulation
 	bool use_initial_scenario <- true;
 	
+	
 	// Start from cycle
 	int start_from_execution_id <- 1;
 	int start_from_cycle <- 0;
@@ -47,7 +47,7 @@ global {
 	bool run_batch <- false;
 	bool save_states <- false;
 	bool save_metrics <- false;
-
+	
 	// Default number of species
 	int nb_people <- 14;
 	int nb_breeding_sites <- 3;
@@ -132,16 +132,86 @@ global {
 	float bs_insecticide_efficiency <- 0.0;
 	int solution_id <- -1;
 	list<bool> need_nebulize;
+	
+	bool kill_mosquitoes <- false;
+	int nb_blocks_to_kill <- 5;
+	float simulation_seed <- 0.2082285800911039;
+	float elapsed_days <- 0.0;
+	int weekday <- 0;
+	int total_infections <- 0;
+	
 
 	// ----------------------------------------------------------
 	// -------------------- Global actions ----------------------
 	// ----------------------------------------------------------
+		
+	reflex update_seed{
+		seed <- simulation_seed;
+		//write "seed inside reflex " + seed;
+	}
+	
+	reflex mosquito_per_road{
+//		loop i  over: Buildings {
+//			//write i;
+//			list<Mosquitoes> mosquitos_in_build <- Mosquitoes where (each.current_building = i);
+//		}
+		write "mosquito count: " + length(Mosquitoes);
+		write "egg count: " + length(Eggs);
+	}
+	
+	reflex update_time{
+		elapsed_days <- ((current_date - starting_date)/86400);				
+		
+		if(current_date.hour = 5 and current_date != starting_date){
+			if(weekday = 7){
+				weekday <- 0;				
+			} 
+			
+			weekday <- weekday + 1;			
+		}
+		
+		write "now is " + current_date;
+		write "its been " + elapsed_days + " days, today is weekday " + weekday;
+		write ""+ People count ((each.state = 1) and (each.start_infected = false)) + " are infected";
+		//if(cycle > 0){
+		//	write "" + cycle_infected_people[cycle-1] + " were infected last cycle.";			
+		//}
+	}
+	
+	reflex kill_mosquitoes_from_blocks when: ((kill_mosquitoes) and (weekday = 7 or current_date = starting_date) and current_date.hour = 5){
+		write "killing mosquitoes from " + nb_blocks_to_kill + " blocks.";
+		list buildings_shuffled <- shuffle (Buildings);
+		
+		loop i from: 0 to:  nb_blocks_to_kill {
+			Buildings random_building <- buildings_shuffled[i];
+			
+//			write random_building;
+						
+			ask Mosquitoes {
+				if(self.current_building = random_building){
+					//write "killing mosquito " + self.name;
+					do die;
+				}
+			}			
+		} 
+		
+		write "remaining number os mosquitos " + length(Mosquitoes);
+	}
+	
 	reflex stop_simulation when: (start_from_cycle + cycle) >= max_cycles {
 		ask Saver {
 			do die;
 		}
 		
 	   end_simulation <- true;
+	   write "end simulation";
+		//do pause;
+		
+		//loop i from: 0 to: max_cycles {
+		//	total_infections <- total_infections + cycle_infected_people[i];
+		//}
+		
+		//write "" + total_infections + " were infected in total";
 	}
 	
 	action create_street_blocks_and_save {
@@ -176,13 +246,14 @@ global {
 			create Blocks {
 				id <- i;
 				block_polygon <- envelope(polygon(points));
+				roads <- block_roads;
 			}
 		}
 			
 		list<Blocks> valid_blocks <- Blocks where(each.block_polygon.area > 0);
 						
 		ask valid_blocks {
-			create Buildings from: [block_polygon] with: [id::id];
+			create Buildings from: [block_polygon] with: [id::id, road_streets::roads];
 		}
 		
 		save Buildings to: building_filename attributes: ["name", "id", "location"] crs: "EPSG:4326";
@@ -518,6 +589,8 @@ global {
 	// ----------------------- Init Model -----------------------
 	// ----------------------------------------------------------
 	init {
+		seed <- simulation_seed;
+		
 		// End the simulation if no map was provided
 		if !file_exists(node_filename) or !file_exists(road_filename) {
 			do die;
@@ -549,6 +622,7 @@ global {
 			create Buildings from: building_shapefile with: [name::read("name"), id::int(read("id")), location::read("location")];
 		}
 		
+		
 		create Saver{}
 		do load_blocks_to_nebulize();
 		
@@ -562,9 +636,12 @@ global {
 		}
 		
 		write "[!] Model is Loaded...";
+		write "Seed: " + seed;
+		simulation_seed <- seed;
 	}
 }
 
+//Species to represent Mosquitoes Eggs
 species Eggs {
 	// Breeding site
 	BreedingSites breeding_site;
@@ -626,7 +703,7 @@ species BreedingSites {
 	}
 	
 	aspect default {
-		draw circle(30) color: #black;
+		draw square(15) color: #black;
 	}		
 }
 
@@ -694,14 +771,27 @@ species People skills: [moving]{
 	}
 	
 	aspect default {
+		int people_size <- 5;
+		//draw string(id) color: #white;
+		
 		if state = 0 {
-			draw circle(5) color: #yellow;	
+			draw circle(people_size) color: #yellow;
+		} else if state = 1 {
+			draw circle(people_size) color: #red;
+		} else {
+			draw circle(people_size) color: #green;
+		}		
+	}
+	
+	aspect infected {
+		
+		if state = 0 {
+			draw circle(5) color: #orange;
 		} else if state = 1 {
 			draw circle(5) color: #red;
-		} else {
-			draw circle(5) color: #green;
-		}	
+		}
 	}
+	
 }
 
 // Species to represent the mosquitoes using the skill moving
@@ -776,13 +866,22 @@ species Mosquitoes skills: [moving] {
 	}
 	
 	aspect default {
-		if state <= 1 {
-			draw circle(5) color: #red;
-		} else if state = 2 {
-			draw circle(5) color: #red;
+		int mosquito_size <- 2;
+		
+		if state = 0 {
+			draw circle(mosquito_size) color: #yellow;
+		} else if state = 1 {
+			draw circle(mosquito_size) color: #orange;
 		} else {
-			draw circle(5) color: #red;
+			draw circle(mosquito_size) color: #red;
 		}
+
+	}
+	
+	aspect infected {
+		if state = 2 {
+			draw circle(3) color: #orange;
+		} 
 	}
 }
 
@@ -791,7 +890,7 @@ species Buildings {
 	int id <- -1;
 	string name;
 	point location;
-	list<point> road_streets;
+	list<Roads> road_streets;
 	
 	aspect default {
 		draw shape color: #gray;
@@ -822,6 +921,7 @@ species Roads skills: [road_skill] {
 species Blocks {
 	int id <- -1;
 	geometry block_polygon;
+	list<Roads> roads;
 }
 
 species Saver skills: [SQLSKILL] {
@@ -1030,22 +1130,27 @@ experiment dengue_propagation type: gui until: (cycle >= max_cycles and end_simu
 	parameter "Scenario number" var: start_from_scenario category: "int" init: 0;
 	parameter "Cycle number" var: start_from_cycle category: "int" init: 0;
 	parameter "Save" var: save_states category: "bool" init: false;
+	//
+	parameter "Simulation seed" var:simulation_seed category:"float";
+	parameter "Kill random mosquitoes" var: kill_mosquitoes category: "bool" init: true;
+	parameter "Number of blocks to kill mosquitoes" var: nb_blocks_to_kill category: "int";
 	
-//	output {
+	output {
 //		display Charts refresh: cycle < 60 axes: true {		
 //			chart "Humans" type: series background: #white position: {0,0} style: exploded x_label: "Days" {
 //				data "Infected" value: People count (each.state = 1) color: #red;
 //				data "Recovered" value: People count (each.state = 2) color: #green;
 //			}
 //		}
-//		display city type: opengl {
-//			species Buildings aspect: default;
-//			species Roads aspect: default ;
-//			species People aspect: default ;
-//			species Mosquitoes aspect: default ;
-//			species BreedingSites aspect: default ;
-//		}
-//	}
+		display city type: opengl {
+			species People aspect:infected;
+			species Mosquitoes aspect:infected;
+			species BreedingSites;
+			species Roads;
+			species Vertices;
+			//species Buildings transparency: 0.7;
+		}
+	}
 }
 
 experiment long_headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 100 {
@@ -1098,6 +1203,12 @@ experiment short_headless_dengue_propagation type: batch keep_seed: true until: 
 	parameter "Save" var: save_states category: "bool" init: false;
 	parameter "Nebulizer Efficiency" var: nebulizer_efficiency category: "float" init: 0.8;
 	parameter "OPT Solution id" var: solution_id category: "int" init: 1;
+	//
+	parameter "Mosquitoes oviposition" var: mosquitoes_oviposition_rate category: "float" init: 0.02;
+	parameter "Mosquitoes death rate" var: mosquitoes_death_rate category: "float" init: 0.01;
+	parameter "Simulation seed" var:simulation_seed category:"float" init:0.0;
+	parameter "Kill random mosquitoes" var: kill_mosquitoes category: "bool" init: true;
+	parameter "Number of blocks to kill mosquitoes" var: nb_blocks_to_kill category: "int";
 }
 
 
