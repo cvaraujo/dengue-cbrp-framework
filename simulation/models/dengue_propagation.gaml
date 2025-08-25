@@ -89,8 +89,8 @@ global {
 	int max_work_end <- 19;
 	
 	// Speed
-	float people_min_speed <- 20.0 #km / #h;
-	float people_max_speed <- 60.0 #km / #h;
+	float people_min_speed <- 10.0 #km / #h;
+	float people_max_speed <- 40.0 #km / #h;
 	
 	// Recovery rate
 	float people_daily_recovery_rate <- 0.143; // TODO: remove 0's
@@ -115,7 +115,7 @@ global {
 	// Oviposition capacity
 	int mosquitoes_max_carrying_capacity <- 3;
 	// Max move distance
-	float max_move_radius <- 150.0 #m;
+	float max_move_radius <- 50.0 #m;
 	
 	// ----------------------------------------------------------
 	// ------------- Breeding site global parameters ------------
@@ -128,7 +128,7 @@ global {
 	// ----------------------------------------------------------
 	// --------------- Logistics global parameters --------------
 	// ----------------------------------------------------------
-	float nebulizer_efficiency <- 0.8;
+	float nebulizer_efficiency <- 0.9;
 	float bs_insecticide_efficiency <- 0.0;
 	int solution_id <- -1;
 	list<bool> need_nebulize;
@@ -944,7 +944,7 @@ species Saver skills: [SQLSKILL] {
 		int cnt <- 1;
 		int nb <- People count ((each.state = 1) and (each.start_infected = false));
 		
-//		write "[SAVE]-> " + string(execution_id) + " - " + string(scenario_id) + " - " + string(start_from_cycle + cycle) + " => " + string(nb);
+		write "[SAVE]-> " + string(execution_id) + " - " + string(scenario_id) + " - " + string(start_from_cycle + cycle) + " => " + string(nb);
 		
 		ask People {
 			if self.state = 1 and self.start_infected = false {
@@ -1071,7 +1071,7 @@ experiment long_headless_dengue_propagation type: batch keep_seed: true until: (
 	parameter "Scenario number" var: start_from_scenario category: "int" init: 1;
 	parameter "Cycle number" var: start_from_cycle category: "int" init: 0;
 	parameter "Save" var: save_states category: "bool" init: false;
-	parameter "Nebulizer Efficiency" var: nebulizer_efficiency category: "float" init: 1.0;
+	parameter "Nebulizer Efficiency" var: nebulizer_efficiency category: "float" init: 0.9;
 	parameter "OPT Solution id" var: solution_id category: "int" init: 1;
 }
 
@@ -1097,7 +1097,7 @@ experiment short_headless_dengue_propagation type: batch keep_seed: true until: 
 	parameter "Scenario number" var: start_from_scenario category: "int" init: 1;
 	parameter "Cycle number" var: start_from_cycle category: "int" init: 0;
 	parameter "Save" var: save_states category: "bool" init: false;
-	parameter "Nebulizer Efficiency" var: nebulizer_efficiency category: "float" init: 0.8;
+	parameter "Nebulizer Efficiency" var: nebulizer_efficiency category: "float" init: 0.9;
 	parameter "OPT Solution id" var: solution_id category: "int" init: 1;
 }
 

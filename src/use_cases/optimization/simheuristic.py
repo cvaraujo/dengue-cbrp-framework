@@ -15,6 +15,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 
+def get_city_info(city: str):
+    if city == "Alto Santo, Ceará, Brasil":
+        return "ALTO SANTO", "alto-santo"
+    return "LIMOEIRO", "limoeiro"
+
 class Solution:
     def __init__(self, blocks: list[int], deterministic_of: float, stochastic_of: float):
         self._blocks = blocks
@@ -50,6 +55,7 @@ class SimheuristicFramework:
         simulation: Simulation,
         stochastic_evaluation: str = "default",
     ):
+        self._graph: Graph = None
         self._output_folder = output_folder
         self._sim_params = simulation_params
         self._opt_params = optimization_params
@@ -151,6 +157,35 @@ class SimheuristicFramework:
         logger.error("[!] Failed to receive response from optimization after multiple attempts.")
         return None
 
+    def _call_naive_optimization(self):
+        speed_m_per_s = 10000 / 3600  # 10 km/h in m/s
+        avg_cases_per_block = [0.0] * self._graph.b
+        num_scenarios = len(self._scenarios)
+        for block in range(self._graph.b):
+            block_cases = [scenario[block] for scenario in self._scenarios]
+            avg_cases_per_block[block] = sum(block_cases) / num_scenarios
+
+        sorted_blocks_by_avg_cases = sorted(
+            range(self._graph.b),
+            key=lambda b: avg_cases_per_block[b],
+            reverse=True
+        )
+
+        block_visiting_time = 0.0
+        visited_blocks = []
+        for block in sorted_blocks_by_avg_cases:
+            arcs: List = self._graph.block_arcs[block]
+            total_length_meters = sum(arc.length for arc in arcs)
+            total_time_seconds = total_length_meters / speed_m_per_s if speed_m_per_s > 0 else 0
+            if total_time_seconds + block_visiting_time > 5400:
+                break
+            block_visiting_time += total_time_seconds
+            visited_blocks.append(block)
+
+        logger.info(f"[*] Naive optimization solution: {len(visited_blocks)} blocks with total time {block_visiting_time:.2f} seconds")
+        time.sleep(1)
+        return Solution(visited_blocks, 0.0, 0.0)
+
     def _check_optimization_status(self):
         try:
             self._socket.send_string("check_conn")
@@ -171,7 +206,7 @@ class SimheuristicFramework:
 
     def _compute_start_scenarios(self):
         self._run_id += 1
-        self._call_simulation(max_cycles=14, is_batch=True, is_short=False)
+        self._call_simulation(max_cycles=180, is_batch=True, is_short=False)
         scenarios: List[List[int]] = self._get_scenario_cases_per_block()
         self._scenarios.extend(scenarios)
         self._use_surrogate_model = True
@@ -363,7 +398,8 @@ class SimheuristicFramework:
         self._call_simulation(max_cycles=0, is_batch=False)
 
     def clear_run(self):
-        self._db.clear_database()
+        pass
+        # self._db.clear_database()
         # self._simulation.kill_gama_headless()
 
     def risk_analysis(self):
@@ -462,6 +498,118 @@ class SimheuristicFramework:
         plt.savefig(os.path.join(self._output_folder, "risk_analysis_boxplot.png"))
         plt.close()
 
+    def mabs_naive_analysis(self):
+        # --- 1. Run base scenario (no intervention) ---
+        # self._run_id += 1
+        # base_scenarios: List[List[int]] = self._get_scenario_cases_per_block()
+
+        # --- 2. Run nebulized scenario (with intervention) ---
+        solution = self._elite_stochastic_solutions[0]
+        self._run_id += 1
+        self._db.run_query_insert_solution(self._run_id, solution.get_blocks())
+        self._call_simulation(max_cycles=180, is_batch=True, is_short=False, nebulize_solution=self._run_id)
+        # nebulized_scenarios: List[List[int]] = self._get_scenario_cases_per_block()
+
+        # --- 3. Get real cases per week ---
+        start_date = self._get_run_param("start_date")
+        city_key = get_city_info(self._get_run_param("city"))[0]
+        coord_blocks = Utils.all_blocks_as_polygons(self._graph)
+
+        # Get simulated cases per week (base and nebulized)
+        # We'll use the same approach as in simulation_metrics.py: group by week using event_date
+        def get_weekly_simulated_cases(run_id):
+            df_sim = self._db.query(
+                f"""
+                SELECT simulation_id, event_date
+                FROM metrics_infected_people
+                WHERE execution_id = {run_id}
+                """
+            )
+            if df_sim.empty:
+                return {}, []
+            df_sim["event_date"] = pd.to_datetime(df_sim["event_date"])
+            df_sim["week_str"] = df_sim["event_date"].apply(
+                lambda d: Utils.last_day_of_week(d).strftime("%Y-%m-%d")
+            )
+            df_sim["simulation_id"] = df_sim["simulation_id"].astype(str)
+            df_sim_grouped = (
+                df_sim.groupby(["week_str", "simulation_id"])
+                .size()
+                .reset_index(name="infected")
+            )
+            sim_weeks = sorted(df_sim_grouped["week_str"].unique())
+            # For each week, get the average number of infected across all scenarios
+            avg_per_week = []
+            for week in sim_weeks:
+                weekly_sim = df_sim_grouped[df_sim_grouped["week_str"] == week]["infected"].tolist()
+                avg = np.mean(weekly_sim) if weekly_sim else 0
+                avg_per_week.append(avg)
+            return dict(zip(sim_weeks, avg_per_week)), sim_weeks
+
+        # Get base scenario weekly averages
+        base_avg_per_week, base_weeks = get_weekly_simulated_cases(self._run_id - 1)
+        # Get nebulized scenario weekly averages
+        nebu_avg_per_week, nebu_weeks = get_weekly_simulated_cases(self._run_id)
+
+        # Get all weeks in order
+        all_weeks = sorted(set(base_weeks) | set(nebu_weeks))
+
+        # --- 4. Get real cases per week ---
+        # Try to get real cases from the database
+        real_per_week = {}
+        if city_key is not None and coord_blocks is not None:
+            # Get the max simulation date to limit the real cases
+            max_sim_date = None
+            if base_weeks:
+                max_sim_date = max(base_weeks)
+            elif nebu_weeks:
+                max_sim_date = max(nebu_weeks)
+            else:
+                max_sim_date = None
+            if max_sim_date is not None:
+                df_real = self._db.get_notifications_between_dates(
+                    start_date, max_sim_date, city_key
+                )
+                if not df_real.empty:
+                    df_real = df_real[
+                        (df_real["classification"] != 5)
+                        & df_real.apply(
+                            lambda row: any(
+                                poly.contains(Point(row["y"], row["x"])) for poly in coord_blocks
+                            ),
+                            axis=1,
+                        )
+                    ][["data_notification"]]
+                    df_real["data_notification"] = pd.to_datetime(df_real["data_notification"])
+                    df_real["week_str"] = df_real["data_notification"].apply(
+                        lambda d: Utils.last_day_of_week(d).strftime("%Y-%m-%d")
+                    )
+                    real_per_week = df_real.groupby("week_str").size().to_dict()
+        # If not available, fill with zeros
+        start_num_cases = np.sum(self._infected_per_block)
+        real_cases_y = [start_num_cases] + [real_per_week.get(week, 0) for week in all_weeks[1:]]
+        base_sim_y = [start_num_cases] + [base_avg_per_week.get(week, 0) for week in all_weeks[1:]]
+        nebu_sim_y = [start_num_cases] + [nebu_avg_per_week.get(week, 0) for week in all_weeks[1:]]
+
+        # --- 5. Plot ---
+        # Change x-axis from date to enumerate the dates
+        x_vals = list(range(0, len(all_weeks), 1))
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(x_vals, real_cases_y, label="Real Cases", marker="o", linestyle="-", color="#36454F")
+        plt.plot(x_vals, base_sim_y, label="Avg Simulated Cases", marker="s", linestyle="--", color="#808080")
+        plt.plot(x_vals, nebu_sim_y, label="Avg Simulated Cases (Nebulized)", marker="^", linestyle="--", color="#E57373")
+        plt.xlabel("Week")
+        plt.ylabel("Number of Notifications")
+        plt.title("Weekly Real vs Simulated Cases (Base and Nebulized)")
+        plt.grid(True)
+        plt.xticks(x_vals, x_vals)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(os.path.join(self._output_folder, "weekly_real_vs_simulated_cases.pdf"), format="pdf", bbox_inches="tight")
+        plt.close()
+
+
     def run(self, socket_str: str, max_time_seconds: int = 120, elite_size: int = 10, max_iters_with_surrogate: int = 100):
         self._create_base_environment()
         self._start_optimization_executable()
@@ -480,8 +628,9 @@ class SimheuristicFramework:
         if self._check_optimization_status():            
             logger.info("[*] Generating start scenarios (Long Simulation of 14 cycles)...")
             self._compute_start_scenarios()
-            start_solution = self._call_optimization(action="load")
-            start_solution = self._call_optimization(action="run")
+            # start_solution = self._call_optimization(action="load")
+            start_solution = self._call_naive_optimization()
+            # start_solution = self._call_optimization(action="run")
         else:
             logger.error("[!] Optimization executable not connected after multiple attempts.")
             return
@@ -502,8 +651,9 @@ class SimheuristicFramework:
         
         while elapsed_time < max_time_seconds:
             opt_start_time = time.time()
-            new_det_solution = self._call_optimization(action="run")
-            
+            # new_det_solution = self._call_optimization(action="run")
+            new_det_solution = self._call_naive_optimization()
+
             if (new_det_solution is None):
                 logger.error("[!] Failed to receive response from optimization after multiple attempts.")
                 return
@@ -532,7 +682,8 @@ class SimheuristicFramework:
         self._call_optimization(action="stop")
         
         risk_start_time = time.time()
-        self.risk_analysis()
+        # self.risk_analysis()
+        self.mabs_naive_analysis()
         logger.info(f"Risk analysis time: {time.time() - risk_start_time:.2f} seconds")
 
         # Clean up

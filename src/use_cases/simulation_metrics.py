@@ -60,10 +60,10 @@ class SimulationMetrics:
         start_date: str,
         exec_id: int,
         people_per_m2: float,
-        mosquitoes_per_person: float = 1.0,
-        nb_breeding_sites: int = 50,
+        mosquitoes_per_person: float = 0.5,
+        nb_breeding_sites: int = 100,
         proportion_infected_mosquitoes_without_cases: float = 0.05,
-        proportion_infected_mosquitoes_with_cases: float = 0.2,
+        proportion_infected_mosquitoes_with_cases: float = 0.4,
         max_cycles: int = 180,
         plot: bool = True,
     ):
@@ -77,7 +77,7 @@ class SimulationMetrics:
         logger.info("[*] Retrieving dengue cases...")
         city_key, city_file = self._get_city_info(city)
         start_datetime = datetime.strptime(start_date, "%Y-%m-%d")
-        prev_date = start_datetime - timedelta(days=6)
+        prev_date = start_datetime - timedelta(days=7)
         cases = self.db.get_notifications_between_dates(
             prev_date.strftime("%Y-%m-%d"), start_date, city_key
         )
@@ -139,7 +139,7 @@ class SimulationMetrics:
             shp_path, exec_id, start_date, max_cycles=max_cycles, save_states=True
         )
         sim.run_simulation(
-            JsonAdapter.convert_param_2_list(params), is_batch=True, short=False
+            JsonAdapter.convert_param_2_list(params), is_batch=True, is_short=False
         )
 
         if plot:
@@ -155,8 +155,8 @@ class SimulationMetrics:
                 ),
             )
 
-        logger.info("[*] Clearing data from database and closing GAMA...")
-        self.db.clear_database()
+        # logger.info("[*] Clearing data from database and closing GAMA...")
+        # self.db.clear_database()
         # sim.kill_gama_headless()
 
     def plot_min_max_avg_real(
