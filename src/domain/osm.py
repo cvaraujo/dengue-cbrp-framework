@@ -1,6 +1,6 @@
 import osmnx as ox
 import matplotlib.pyplot as plt
-import contextily as ctx
+# import contextily as ctx
 import numpy as np
 import matplotlib as mpl
 from collections import defaultdict
@@ -14,7 +14,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 ox.settings.log_console = False
 
 class OpenStreetMap:
-    def __init__(self, query: str, radius: int):
+    def __init__(self, query: str, radius: int = 0, from_place: bool = False):
         self.query: str = query
         self.radius: int = radius
         self.osm_map = None
@@ -22,7 +22,10 @@ class OpenStreetMap:
         self.lon: float = 0.0
 
         try:
-            self.osm_map = ox.graph_from_address(query, radius, simplify=True)
+            if from_place:
+                self.osm_map = ox.graph_from_place(query, network_type="drive", simplify=True)
+            else:
+                self.osm_map = ox.graph_from_address(query, radius, simplify=True)
         except Exception as e:
             print(f"Error to load the map: {e}")
 

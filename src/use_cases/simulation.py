@@ -4,7 +4,7 @@ from venv import logger
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv('dengue-cbrp-framework/src/.env')
+load_dotenv('.env')
 
 class Simulation:
     def __init__(
@@ -50,7 +50,7 @@ class Simulation:
                     return
 
     async def _run(self, parameters: list[dict], is_batch: bool, short: bool = False):
-        async with websockets.connect(self.websocket_url) as websocket:
+        async with websockets.connect(self.websocket_url, ping_timeout=60000) as websocket:
             experiment = "dengue_propagation"
             if is_batch:
                 experiment = (
@@ -66,6 +66,8 @@ class Simulation:
                 "until": "end_simulation = true",
                 "parameters": parameters,
             }
+
+            print(load_cmd)
 
             await self._send_message(websocket, load_cmd)
             await self._handle_message(websocket, is_batch)

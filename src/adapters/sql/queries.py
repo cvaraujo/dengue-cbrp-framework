@@ -30,7 +30,7 @@ BREEDING_SITES_INSERT_QUERY = text(
 NOTIFICATIONS_BETWEEN_DATES_QUERY = text(
     """
         SELECT * FROM cases
-        WHERE city = :city
+        WHERE city = :city OR neighborhood = :city
             AND data_notification BETWEEN :start_date AND :end_date
     """
 )

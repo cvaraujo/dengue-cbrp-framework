@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from adapters.sql.queries import NOTIFICATIONS_BETWEEN_DATES_QUERY
 
 logging.basicConfig(level=logging.INFO)
-load_dotenv('dengue-cbrp-framework/src/.env')
+load_dotenv('.env')
 
 
 class PostgreSQLAdapter:
@@ -18,7 +18,7 @@ class PostgreSQLAdapter:
         host=os.getenv("PG-HOST", "localhost"),
         port=os.getenv("PG-PORT", 5432),
         dbname=os.getenv("PG-DBNAME", "dengue-propagation"),
-        user=os.getenv("PG-USER"),
+        user=os.getenv("PG-USER", "postgres"),
         password=os.getenv("PG-PASS"),
     ):
         self.database_url = (
@@ -64,6 +64,8 @@ class PostgreSQLAdapter:
             self.conn,
             params={"city": city, "start_date": start_date, "end_date": end_date},
         )
+
+        print(f"[*] Retrieved {len(df)} notifications.")
         return df
 
     def query(self, query_str: str) -> pd.DataFrame:
@@ -79,6 +81,7 @@ class PostgreSQLAdapter:
             "eggs",
             "metrics",
             "metrics_infected_people",
+            "metrics_mosquitoes",
         ]:
             query = text(f"DELETE FROM {table}")
             self.conn.execute(query)
@@ -87,10 +90,10 @@ class PostgreSQLAdapter:
     def run_query_with_records(self, query: str, records: List):
         if len(records) > 0:
             self.conn.execute(query, records)
-            self.conn.commit()
+            # self.conn.commit()
 
     def run_query_insert_solution(self, solution_id: int, blocks: List[int]):
         query = text(f"INSERT INTO blocks_to_nebulize (solution_id, blocks) VALUES (:solution_id, :blocks)")
         blocks_str = ",".join(str(b) for b in blocks)
         self.conn.execute(query, {"solution_id": solution_id, "blocks": blocks_str})
-        self.conn.commit()
+        # self.conn.commit()

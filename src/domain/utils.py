@@ -377,6 +377,8 @@ def get_infected_recovered_people_per_block(
     # Filter out classification 5 (likely "discarded" cases)
     filtered_df = df[df["classification"] != 5]
 
+    print(f"[*] Total cases after filtering: {len(filtered_df)}")
+
     num_blocks = graph.b
     infected = np.zeros(num_blocks, dtype=int)
     recovered = np.zeros(num_blocks, dtype=int)
@@ -386,10 +388,11 @@ def get_infected_recovered_people_per_block(
     for _, row in filtered_df.iterrows():
         y, x = float(row["y"]), float(row["x"])
         notif_date = pd.to_datetime(row["data_notification"])
-        point: Point = Point(y, x)
+        point: Point = Point(x, y)
 
         for i, polygon in enumerate(coord_blocks):
             if polygon.contains(point):
+                print(f"[*] Notification at ({x}, {y}) on {notif_date.date()} mapped to block {i}.")
                 # if point_in_polygon((y, x), polygon):
                 if notif_date > range_infected_date:
                     infected[i] += 1

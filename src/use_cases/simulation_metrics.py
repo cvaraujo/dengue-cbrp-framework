@@ -23,17 +23,49 @@ from sklearn.metrics import mean_absolute_error
 
 
 class SimulationMetrics:
-    def __init__(self, output_folder: str):
+    def __init__(self, 
+                 output_folder: str,
+                 city: str,
+                 map_size: int,
+                 start_date: str,
+                 people_per_m2: float,
+                 max_cycles: int = 180,
+                 mosquitoes_per_person: float = 1.0,
+                 nb_breeding_sites: int = 50,
+                 proportion_infected_mosquitoes_without_cases: float = 0.05,
+                 proportion_infected_mosquitoes_with_cases: float = 0.4):
+    
         self.output_folder = output_folder
         self.db = PostgreSQLAdapter()
+        self.city = city
+        self.map_size = map_size
+        self.start_date = start_date    
+        self.max_cycles = max_cycles
+        self.people_per_m2 = people_per_m2
+        self.mosquitoes_per_person = mosquitoes_per_person
+        self.nb_breeding_sites = nb_breeding_sites
+        self.proportion_infected_mosquitoes_without_cases = proportion_infected_mosquitoes_without_cases
+        self.proportion_infected_mosquitoes_with_cases = proportion_infected_mosquitoes_with_cases
+        
+        self.city_key, _ = self._get_city_info(self.city)
+        
+        (self.shp_path,  
+        self.coord_blocks, 
+        self.people_block, 
+        self.infected, 
+        self.recovered, 
+        self.starting_num_infected) = self._load_simulation()
 
     def _get_city_info(self, city: str):
         if city == "Alto Santo, Ceará, Brasil":
             return "ALTO SANTO", "alto-santo"
-        return "LIMOEIRO", "limoeiro"
+        elif city == "Limoeiro do Norte, Ceará, Brasil":
+            return "LIMOEIRO", "limoeiro"
+        elif city == "Guaratiba, Rio de Janeiro, Brasil":
+            return "Guaratiba", "guaratiba"
 
     def _build_shapefile_path(self, city_key: str, map_size: int) -> str:
-        path = os.path.abspath(f"dengue-cbrp-framework/src/includes/{city_key}_{map_size}")
+        path = os.path.abspath(f"./src/includes/{city_key}_{map_size}")
         os.makedirs(path, exist_ok=True)
         return path
 
@@ -53,75 +85,22 @@ class SimulationMetrics:
             "save_states": ("bool", save_states),
         }
 
-    def run_stochastic_instance_simulation(
-        self,
-        city: str,
-        map_size: int,
-        start_date: str,
-        exec_id: int,
-        additional_params: dict = None
-    ):
-        logger.info("[*] Clearing data from database...")
-        self.db.clear_database()
-
-        logger.info(f"[*] Loading OSM map: {city} ({map_size})...")
-        osm = OpenStreetMap(city, map_size)
-        graph: Graph = MapAdapter.convert_osm_to_graph(osm, True)
-
-        city_key, city_file = self._get_city_info(city)
-
-        logger.info("[*] Exporting SHP files...")
-        shp_path = self._build_shapefile_path(city_key, map_size)
-        MapAdapter.export_osm_to_shapefile(osm, graph, shp_path)
-
-        sim: Simulation = Simulation()
-        params = self._prepare_parameters(
-           shp_path, exec_id, start_date, max_cycles=60, save_states=False
-        )
-        params.update(additional_params or {})
-        
-        logger.info("[*] Running batch simulation...")
-        result = sim.run_simulation(JsonAdapter.convert_param_2_list(params), is_batch=False)
-        
-        if result:
-            logger.info("[*] Simulation completed.")
-
-        return result
-
-    
-    def compare_simulated_with_real_cases(
-        self,
-        city: str,
-        map_size: int,
-        start_date: str,
-        exec_id: int,
-        people_per_m2: float,
-        mosquitoes_per_person: float = 1.0,
-        nb_breeding_sites: int = 50,
-        proportion_infected_mosquitoes_without_cases: float = 0.05,
-        proportion_infected_mosquitoes_with_cases: float = 0.2,
-        max_cycles: int = 180,
-        plot: bool = True,
-    ):
-        logger.info("[*] Clearing data from database...")
-        self.db.clear_database()
-
-        logger.info(f"[*] Loading OSM map: {city} ({map_size})...")
-        osm = OpenStreetMap(city, map_size)
+    def _load_simulation(self):
+        logger.info(f"[*] Loading OSM map: {self.city} ({self.map_size})...")
+        osm = OpenStreetMap(self.city, self.map_size, True)
         graph: Graph = MapAdapter.convert_osm_to_graph(osm, True)
 
         logger.info("[*] Retrieving dengue cases...")
-        city_key, city_file = self._get_city_info(city)
-        start_datetime = datetime.strptime(start_date, "%Y-%m-%d")
+        start_datetime = datetime.strptime(self.start_date, "%Y-%m-%d")
         prev_date = start_datetime - timedelta(days=6)
         cases = self.db.get_notifications_between_dates(
-            prev_date.strftime("%Y-%m-%d"), start_date, city_key
+            prev_date.strftime("%Y-%m-%d"), self.start_date, self.city_key
         )
 
         logger.info("[*] Processing blocks and population data...")
         coord_blocks: List[Polygon] = Utils.all_blocks_as_polygons(graph)
         people_block: List = Utils.compute_people_per_block(
-            graph, people_per_m2, coord_blocks
+            graph, self.people_per_m2, coord_blocks
         )
 
         logger.info(f"[*] There are {sum(people_block)} people in simulation...")
@@ -130,13 +109,23 @@ class SimulationMetrics:
             cases, graph, start_datetime, coord_blocks
         )
 
-        print(infected)
         starting_num_infected = np.sum(infected)
 
         logger.info(f"[*] Starting number of infected people {starting_num_infected}")
-        if starting_num_infected < 5:
-            logger.error("[!] Not enough infected people to run the simulation.")
-            return
+        # if starting_num_infected < 5:
+        #     logger.error("[!] Not enough infected people to run the simulation.")
+        #     return 0, None, None, None, None, None
+
+        logger.info("[*] Exporting SHP files...")
+        shp_path = self._build_shapefile_path(self.city_key, self.map_size)
+        MapAdapter.export_osm_to_shapefile(osm, graph, shp_path)
+
+        return shp_path, coord_blocks, people_block, infected, recovered, starting_num_infected
+    
+    def compare_simulated_with_real_cases(self, exec_id: int, clear_db: bool = True, plot: bool = True, additional_params: dict = None):            
+        if clear_db:
+            logger.info("[*] Clearing data from database...")
+            self.db.clear_database()
 
         logger.info("[*] Inserting starting scenario...")
         sg: ScenarioGeneration = ScenarioGeneration(
@@ -144,67 +133,41 @@ class SimulationMetrics:
             simulation_id=0,
             cycle=0,
             started_from_cycle=0,
-            start_date=start_date,
+            start_date=self.start_date,
             connection=self.db,
         )
 
         sg.create_starting_scenario(
-            people_per_block=people_block,
-            infected_people_per_block=infected,
-            recovered_people_per_block=recovered,
-            mosquitoes_per_person=mosquitoes_per_person,
-            nb_breeding_sites=nb_breeding_sites,
-            proportion_infected_mosquitoes_without_cases=proportion_infected_mosquitoes_without_cases,
-            proportion_infected_mosquitoes_with_cases=proportion_infected_mosquitoes_with_cases,
+            people_per_block=self.people_block,
+            infected_people_per_block=self.infected,
+            recovered_people_per_block=self.recovered,
+            mosquitoes_per_person=self.mosquitoes_per_person,
+            nb_breeding_sites=self.nb_breeding_sites,
+            proportion_infected_mosquitoes_without_cases=self.proportion_infected_mosquitoes_without_cases,
+            proportion_infected_mosquitoes_with_cases=self.proportion_infected_mosquitoes_with_cases,
         )
-
-        logger.info("[*] Exporting SHP files...")
-        shp_path = self._build_shapefile_path(city_key, map_size)
-        MapAdapter.export_osm_to_shapefile(osm, graph, shp_path)
-
-        logger.info("[*] Running initial simulation...")
-        params = self._prepare_parameters(
-            shp_path, exec_id, start_date, max_cycles=0, save_states=False
-        )
-
-        sim: Simulation = Simulation()
-        sim.run_simulation(JsonAdapter.convert_param_2_list(params), is_batch=False)
 
         logger.info("[*] Running batch simulation...")
+        sim: Simulation = Simulation()
         params = self._prepare_parameters(
-            shp_path, exec_id, start_date, max_cycles=max_cycles, save_states=True
+            self.shp_path, exec_id, self.start_date, max_cycles=self.max_cycles, save_states=True
         )
+        params.update(additional_params or {})
+        
         sim.run_simulation(
-            JsonAdapter.convert_param_2_list(params), is_batch=True, short=False
+            JsonAdapter.convert_param_2_list(params), is_batch=True, is_short=False
         )
 
-        if plot:
-            self.plot_min_max_avg_real(
-                starting_num_infected,
-                start_date,
-                city_key,
-                exec_id,
-                coord_blocks,
-                os.path.join(
+        if plot: self.plot_min_max_avg_real(exec_id=exec_id)
+
+        # logger.info("[*] Clearing data from database and closing GAMA...")
+        # self.db.clear_database()
+
+    def plot_min_max_avg_real(self, exec_id: int):
+        filename = os.path.join(
                     self.output_folder,
-                    f"{city_key}_{map_size}_{mosquitoes_per_person}_{nb_breeding_sites}_{proportion_infected_mosquitoes_without_cases}_{proportion_infected_mosquitoes_with_cases}",
-                ),
-            )
-
-        logger.info("[*] Clearing data from database and closing GAMA...")
-        self.db.clear_database()
-        # sim.kill_gama_headless()
-
-    def plot_min_max_avg_real(
-        self,
-        start_num_infected: int,
-        start_date: str,
-        city_key: str,
-        exec_id: int,
-        coord_blocks: list,
-        filename: str,
-    ):
-
+                    f"{self.city_key}_{self.map_size}_{self.mosquitoes_per_person}_{self.nb_breeding_sites}_{self.proportion_infected_mosquitoes_without_cases}_{self.proportion_infected_mosquitoes_with_cases}")
+        
         logger.info("[*] Extracting and Processing simulated cases...")
         # 1. Simulated cases
         df_sim = self.db.query(
@@ -232,17 +195,19 @@ class SimulationMetrics:
 
         logger.info("[*] Processing real notifications...")
         df_real = self.db.get_notifications_between_dates(
-            start_date, max_sim_date, city_key
+            self.start_date, max_sim_date, self.city_key
         )
         df_real = df_real[
             (df_real["classification"] != 5)
             & df_real.apply(
                 lambda row: any(
-                    poly.contains(Point(row["y"], row["x"])) for poly in coord_blocks
+                    poly.contains(Point(row["x"], row["y"])) for poly in self.coord_blocks
                 ),
                 axis=1,
             )
         ][["data_notification"]]
+
+        print("[*] Real notifications after filtering:", len(df_real))
 
         df_real["data_notification"] = pd.to_datetime(df_real["data_notification"])
         df_real["week_str"] = df_real["data_notification"].apply(
@@ -257,20 +222,20 @@ class SimulationMetrics:
 
         # First week represents the start cenários + cases from StartDate (considering approximate two cycles here)
         weeks = [1]
-        avg_y = [start_num_infected]
-        real_y = [start_num_infected]
+        avg_y = [self.starting_num_infected]
+        real_y = [self.starting_num_infected]
         sim_x = [1]
-        sim_y = [start_num_infected]
-        max_sim_y = [start_num_infected]
-        min_sim_y = [start_num_infected]
+        sim_y = [self.starting_num_infected]
+        max_sim_y = [self.starting_num_infected]
+        min_sim_y = [self.starting_num_infected]
 
         metrics.append(
             {
                 "Date": sim_weeks[0],
-                "Avg": start_num_infected,
-                "Min": start_num_infected,
-                "Max": start_num_infected,
-                "Real": start_num_infected,
+                "Avg": self.starting_num_infected,
+                "Min": self.starting_num_infected,
+                "Max": self.starting_num_infected,
+                "Real": self.starting_num_infected,
             }
         )
 
@@ -371,18 +336,44 @@ class SimulationMetrics:
 
         logger.info("[*] Finished.")
 
-    def plot_multiple_cases(
+    def plot_multiple_execs(
         self,
-        start_num_infected: int,
         filename: str,
-        n_curves: int,
-        style: dict
+        n_execs: int,
+        style: dict,
     ):
 
         all_weeks = []
         all_avg_y = []
 
-        for i in range(n_curves):
+        df_sim_full = self.db.query(
+            f"""
+            SELECT event_date
+            FROM metrics_infected_people
+            """
+        )
+
+        df_sim_full["event_date"] = pd.to_datetime(df_sim_full["event_date"])
+        max_sim_date = df_sim_full["event_date"].max()
+        max_sim_date = datetime.strptime(self.start_date, "%Y-%m-%d") + timedelta(days=((self.max_cycles // 2) + 1))
+        # df_sim_full["week_str"] = df_sim_full["event_date"].apply(
+        #         lambda d: Utils.last_day_of_week(d).strftime("%Y-%m-%d")
+        # )
+        # df_sim_full_grouped = (
+        #     df_sim_full.groupby(["week_str"])
+        #     .size()
+        #     .reset_index(name="infected")
+        # )
+        # print(df_sim_full_grouped)
+
+        # all_weeks_full = df_sim_full_grouped["week_str"].unique()
+        all_weeks_full = pd.date_range(
+            start=self.start_date,
+            end=max_sim_date,
+            freq='W-SUN'  
+        ).strftime("%Y-%m-%d").tolist()
+
+        for i in range(n_execs):
             logger.info(f"[*] Extracting and Processing simulated cases for execution {i}...")
     
             df_sim = self.db.query(
@@ -393,25 +384,35 @@ class SimulationMetrics:
                 """
             )
 
-            logger.info("[*] Processing simulated notifications...")
             df_sim["event_date"] = pd.to_datetime(df_sim["event_date"])
-
             df_sim["week_str"] = df_sim["event_date"].apply(
                 lambda d: Utils.last_day_of_week(d).strftime("%Y-%m-%d")
             )
             df_sim["simulation_id"] = df_sim["simulation_id"].astype(str)
-
+            
             df_sim_grouped = (
                 df_sim.groupby(["week_str", "simulation_id"])
                 .size()
                 .reset_index(name="infected")
             )
 
-            logger.info("[*] Processing data to plot...")
+            idx = pd.MultiIndex.from_product(
+                [all_weeks_full, df_sim_grouped["simulation_id"].unique()],
+                names=["week_str", "simulation_id"]
+            )
+
+            df_sim_grouped = (
+                df_sim_grouped.set_index(["week_str", "simulation_id"])
+                .reindex(idx, fill_value=0)
+                .reset_index()
+            )
+
+            print(df_sim_grouped)
+
             sim_weeks = sorted(df_sim_grouped["week_str"].unique())
 
             weeks = [1]
-            avg_y = [start_num_infected]
+            avg_y = [self.starting_num_infected]
 
             for j, week in enumerate(sim_weeks[1:], start=2):
                 weekly_sim = df_sim_grouped[df_sim_grouped["week_str"] == week][
@@ -428,11 +429,38 @@ class SimulationMetrics:
             all_weeks.append(weeks)
             all_avg_y.append(avg_y)
 
-        logger.info("[*] Saving figure as PDF...")
+        logger.info("[*] Processing real notifications to plot...")
+        df_real = self.db.get_notifications_between_dates(
+            self.start_date, max_sim_date, self.city_key
+        )
+        df_real = df_real[
+            (df_real["classification"] != 5)
+            & df_real.apply(
+                lambda row: any(
+                    poly.contains(Point(row["y"], row["x"])) for poly in self.coord_blocks
+                ),
+                axis=1,
+            )
+        ][["data_notification"]]
 
+        df_real["data_notification"] = pd.to_datetime(df_real["data_notification"])
+        df_real["week_str"] = df_real["data_notification"].apply(
+            lambda d: Utils.last_day_of_week(d).strftime("%Y-%m-%d")
+        )
+        df_real_grouped = df_real.groupby("week_str").size().to_dict()
+        sim_weeks = sorted(all_weeks_full)
+
+        real_y = [self.starting_num_infected]
+        for i, week in enumerate(sim_weeks[1:], start=2):
+            weekly_real = df_real_grouped.get(week, 0)
+            real_y.append(weekly_real)
+
+        logger.info("[*] Saving figure as PDF...")
         plt.figure(figsize=(10, 6))
-        for i in range(n_curves):
+        for i in range(n_execs):
             plt.plot(all_weeks[i], all_avg_y[i], label=style[i]["name"], color=style[i]["color"], linestyle=style[i]["dash"])
+
+        plt.plot(all_weeks[0], real_y, label="Real Cases", marker="o", linestyle="-", color="#36454F")
 
         plt.xlabel("Weeks")
         plt.ylabel("Number of Notifications")
@@ -444,6 +472,125 @@ class SimulationMetrics:
         plt.close()
 
         logger.info("[*] Finished.")    
+
+    def plot_multiple_execs_mosquitoes(
+        self,
+        filename_prefix: str, 
+        n_execs: int,
+        style: dict
+    ):
+        metrics = ["new_mosquitoes", "total_mosquitoes", "infected_mosquitoes"]
+       
+        for metric in metrics:
+            all_weeks = []
+            all_avg_y = []
+
+            df_sim_full = self.db.query(
+                f"""
+                SELECT event_date
+                FROM metrics_mosquitoes
+                """
+            )
+
+            df_sim_full["event_date"] = pd.to_datetime(df_sim_full["event_date"])
+            max_sim_date = df_sim_full["event_date"].max()
+            df_sim_full["week_str"] = df_sim_full["event_date"].apply(
+                lambda d: Utils.last_day_of_week(d).strftime("%Y-%m-%d")
+            )
+            df_sim_full_grouped = (
+                df_sim_full.groupby(["week_str"])
+                .size()
+                .reset_index(name="count")
+            )
+
+            all_weeks_full = df_sim_full_grouped["week_str"].unique()
+
+            for i in range(n_execs):
+                logger.info(f"[*] Extracting and processing mosquito data ({metric}) for execution {i}...")
+
+                df_sim = self.db.query(
+                    f"""
+                    SELECT simulation_id, event_date, {metric}
+                    FROM metrics_mosquitoes
+                    WHERE execution_id = {i}
+                    """
+                )
+
+                df_sim["event_date"] = pd.to_datetime(df_sim["event_date"])
+                df_sim["week_str"] = df_sim["event_date"].apply(
+                    lambda d: Utils.last_day_of_week(d).strftime("%Y-%m-%d")
+                )
+                df_sim["simulation_id"] = df_sim["simulation_id"].astype(str)
+
+               
+                if metric == "total_mosquitoes":
+                    # Pega o valor do último dia da semana. No caso, de total_mosquitoes não queremos ver o acumulado.
+                    df_sim_grouped = (
+                        df_sim.sort_values("event_date")
+                        .groupby(["week_str", "simulation_id"], as_index=False)
+                        .last()[["week_str", "simulation_id", metric]]
+                    )
+                else:
+                    # Pega a soma da semana para exibir o acumulado.
+                    df_sim_grouped = (
+                        df_sim.groupby(["week_str", "simulation_id"])[metric]
+                        .sum()
+                        .reset_index(name=metric)
+                    )
+
+               
+                idx = pd.MultiIndex.from_product(
+                    [all_weeks_full, df_sim_grouped["simulation_id"].unique()],
+                    names=["week_str", "simulation_id"]
+                )
+                df_sim_grouped = (
+                    df_sim_grouped.set_index(["week_str", "simulation_id"])
+                    .reindex(idx, fill_value=0)
+                    .reset_index()
+                )
+
+                sim_weeks = sorted(df_sim_grouped["week_str"].unique())
+                weeks = [1]
+                if metric == "total_mosquitoes":
+                    avg_y = [self.mosquitoes_per_person * sum(self.people_block)] 
+                else:
+                    avg_y = [0]
+
+                for j, week in enumerate(sim_weeks[1:], start=2):
+                    weekly_values = df_sim_grouped[df_sim_grouped["week_str"] == week][metric].tolist()
+                    print(weekly_values)
+                    avg = np.mean(weekly_values)
+                    weeks.append(j)
+                    avg_y.append(avg)
+
+                all_weeks.append(weeks)
+                all_avg_y.append(avg_y)
+
+           
+            logger.info(f"[*] Saving figure ({metric}) as PDF...")
+
+            plt.figure(figsize=(10, 6))
+            for i in range(n_execs):
+                plt.plot(
+                    all_weeks[i],
+                    all_avg_y[i],
+                    label=style[i]["name"],
+                    color=style[i]["color"],
+                    linestyle=style[i]["dash"]
+                )
+
+            # plt.yscale("log")
+            plt.xlabel("Weeks")
+            plt.ylabel(f"{metric.replace('_', ' ').title()}")
+            plt.title(f"Weekly {metric.replace('_', ' ').title()} Evolution")
+            plt.grid(True)
+            plt.xticks(all_weeks[0])
+            plt.tight_layout()
+            plt.legend()
+            plt.savefig(f"{filename_prefix}_{metric}.pdf", format="pdf", bbox_inches="tight")
+            plt.close()
+
+            logger.info(f"[*] Finished plotting {metric}.")
 
     def test_plot_min_max_avg_real(
         self,
