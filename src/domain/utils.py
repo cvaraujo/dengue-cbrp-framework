@@ -7,6 +7,7 @@ import pandas as pd
 from shapely.geometry import Point, Polygon
 import geopandas as gpd
 from matplotlib import pyplot as plt
+import time
 
 
 def on_segment(p, q, r):
@@ -387,16 +388,14 @@ def get_infected_recovered_people_per_block(
         y, x = float(row["y"]), float(row["x"])
         notif_date = pd.to_datetime(row["data_notification"])
         point: Point = Point(y, x)
-
+        
         for i, polygon in enumerate(coord_blocks):
             if polygon.contains(point):
-                # if point_in_polygon((y, x), polygon):
                 if notif_date > range_infected_date:
                     infected[i] += 1
                 else:
                     recovered[i] += 1
                 break  # once matched to a block, stop checking
-
     return infected, recovered
 
 
@@ -411,8 +410,8 @@ def case_in_one_block(row: pd.Series, coord_blocks: List):
 
 def get_city_info(city: str):
     if city == "Alto Santo, Ceará, Brasil":
-        return "ALTO SANTO", "alto-santo"
-    return "LIMOEIRO", "limoeiro"
+        return "ALTO SANTO", "Alto Santo, Ceará, Brasil"
+    return "LIMOEIRO", "Limoeiro do Norte, Ceará, Brasil"
 
 
 def build_shapefile_path(city_key: str, map_size: int) -> str:

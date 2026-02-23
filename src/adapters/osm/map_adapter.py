@@ -17,6 +17,7 @@ class MapAdapter:
     @staticmethod
     def export_osm_to_shapefile(osm: OpenStreetMap, graph: Graph, path: str) -> bool:
         try:
+            print(f"[*] Exporting OSM to shapefile to {path}")
             os.makedirs(path, exist_ok=True)
             MapAdapter.add_key_block_arc_attrs(osm, graph)
             gdf_nodes, gdf_arcs = ox.convert.graph_to_gdfs(osm.osm_map)

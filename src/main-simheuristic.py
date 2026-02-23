@@ -19,8 +19,8 @@ default_as_sim_params = {
 }
 
 default_lm_sim_params = {
-    "people_per_km2": 0.006,
-    "mosquitoes_per_person": 0.8,
+    "people_per_km2": 0.003,
+    "mosquitoes_per_person": 1.0,
     "nb_breeding_sites": 300,
     "proportion_infected_mosquitoes_without_cases": 0.2,
     "proportion_infected_mosquitoes_with_cases": 0.9,
@@ -35,7 +35,7 @@ city_info_map = {
 default_connection_params = {
     "local": {
         "socket_str": "tcp://localhost:2021",
-        "project_dir": "/home/carlos/Documentos/cbrp-methodologies/",
+        "project_dir": "/home/carlos/Documentos/cbrp-methodologies",
         "executable_path": "/home/carlos/Documentos/cbrp-methodologies/cbrp-simheur",
         "server_path": "/home/carlos/Documentos/GAMA_1.9.2_Linux_with_JDK/headless/gama-headless.sh",
         "server_port": "6868",
@@ -59,17 +59,19 @@ default_connection_params = {
 
 if __name__ == "__main__":
     args = sys.argv
-    run_mode = "local"
-    default_route_time = "1200"
-    max_run_time = 1800
-    elite_size = 10
-    max_iters_with_surrogate = 500
-    city = "AS"
-    map_size = 700
-    start_date = "2017-01-08"
-    end_date = "2017-01-15"
-    output_folder = "/home/carlos/Documentos/dengue-cbrp-framework/temp/simulation_metrics"
-    stochastic_evaluation = "default"
+    run_mode: str = "local"
+    default_route_time: str = "1200"
+    alpha_model: float = 0.8
+    max_run_time: int = 1
+    elite_size: int = 1
+    max_iters_with_surrogate: int = 500
+    city: str = "LM"
+    map_size: int = 2000
+    start_date: str = "2020-06-28"
+    end_date: str = "2020-07-05"
+    output_folder: str = "/home/carlos/Documentos/dengue-cbrp-framework/temp/simulation_metrics"
+    stochastic_evaluation: str = "default"
+    objective_function: str = "FULL"
 
     if len(args) > 1:
         run_mode = args[1] # local or docker
@@ -93,7 +95,7 @@ if __name__ == "__main__":
     else:
         sim_params = default_lm_sim_params
     
-    city_name = city_info_map.get(city, "Alto Santo, Ceará, Brasil")
+    city_name = city_info_map.get(city, "Limoeiro do Norte, Ceará, Brasil")
 
     run_params = {
         "city": city_name,
@@ -123,7 +125,7 @@ if __name__ == "__main__":
     
     start_time = time.time()
     simulation = Simulation(server_path, server_port, model)
-    simheuristic = SimheuristicFramework(output_folder, run_params, sim_params, opt_params, simulation, stochastic_evaluation)
+    simheuristic = SimheuristicFramework(output_folder, run_params, sim_params, opt_params, simulation, alpha_model=alpha_model, stochastic_evaluation=stochastic_evaluation, objective_function=objective_function)
     
     simheuristic.run(socket_str, max_run_time, elite_size, max_iters_with_surrogate)
     logger.info(f"Total time: {time.time() - start_time:.2f} seconds")

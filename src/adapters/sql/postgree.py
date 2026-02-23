@@ -38,7 +38,7 @@ class PostgreSQLAdapter:
             WHERE pid <> pg_backend_pid()
               AND datname = :dbname
               AND state = 'idle';
-        """
+            """
         )
         self.conn.execute(query, {"dbname": "dengue-propagation"})
         self.conn.commit()
@@ -76,6 +76,11 @@ class PostgreSQLAdapter:
         ]:
             query = text(f"DELETE FROM {table}")
             self.conn.execute(query)
+        self.conn.commit()
+
+    def query_remove(self, query_str: str):
+        query = text(query_str)
+        self.conn.execute(query)
         self.conn.commit()
 
     def run_query_with_records(self, query: str, records: List):

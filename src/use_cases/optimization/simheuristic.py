@@ -1,8 +1,9 @@
 import os, zmq, subprocess, time, heapq, threading
 import numpy as np
 from typing import List
-from datetime import datetime
+from datetime import datetime, timedelta
 from venv import logger
+from shapely import Polygon, Point
 import adapters.json.json_adapter as JsonAdapter
 from domain.osm import OpenStreetMap
 from domain.graph import Graph
@@ -12,6 +13,7 @@ from use_cases.simulation import Simulation
 from use_cases.scenario_generation import ScenarioGeneration
 import domain.utils as Utils
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 import seaborn as sns
 import pandas as pd
 
@@ -32,6 +34,9 @@ class Solution:
     def get_blocks(self) -> list[int]:
         return self._blocks
     
+    def set_deterministic_of(self, deterministic_of: float):
+        self._deterministic_of = deterministic_of
+
     def get_deterministic_of(self) -> float:
         return self._deterministic_of
     
@@ -42,6 +47,8 @@ class Solution:
         return self._stochastic_of
     
     def __lt__(self, other):
+        if self._deterministic_of == other.get_deterministic_of():
+            return self._stochastic_of > other.get_stochastic_of()
         return self._deterministic_of > other.get_deterministic_of()
 
 
@@ -53,7 +60,9 @@ class SimheuristicFramework:
         simulation_params: dict,
         optimization_params: dict,
         simulation: Simulation,
+        alpha_model: float = 0.8,
         stochastic_evaluation: str = "default",
+        objective_function: str = "RANDOM",
     ):
         self._graph: Graph = None
         self._output_folder = output_folder
@@ -68,8 +77,9 @@ class SimheuristicFramework:
         self._elite_stochastic_solutions = []
         self._run_id = 0
         self._use_surrogate_model = True
-        self._alpha = 0.8
+        self._alpha = alpha_model
         self._stochastic_evaluation = stochastic_evaluation
+        self._objective_function = objective_function
 
     def _get_sim_param(self, param_key: str):
         try:
@@ -104,7 +114,7 @@ class SimheuristicFramework:
             input_graph: str = os.path.abspath(os.path.join(self._output_folder, "graph.txt"))
 
             process = subprocess.Popen(
-                [binary_path, input_graph, max_time_route, socket_str],
+                [binary_path, input_graph, max_time_route, str(self._alpha), socket_str],
                 stdout=subprocess.PIPE,
                 text=True,
             )
@@ -121,11 +131,14 @@ class SimheuristicFramework:
         except Exception as e:
             logger.error(f"[!] Error starting optimization executable: {e}")
             exit(1)
+        time.sleep(10)
         
     def _call_optimization(self, action: str = "run") -> Solution | None:
         message = action
         if action == "load":
             message += f":{self._run_id}"
+        if action == "run":
+            message += f":{self._objective_function}"
 
         logger.info(f"[*] Preparing to send message to optimization: {message}")
 
@@ -158,14 +171,14 @@ class SimheuristicFramework:
         return None
 
     def _call_naive_optimization(self):
-        speed_m_per_s = 10000 / 3600  # 10 km/h in m/s
-        avg_cases_per_block = [0.0] * self._graph.b
-        num_scenarios = len(self._scenarios)
+        speed_m_per_s: float = 10000 / 3600  # 10 km/h in m/s
+        avg_cases_per_block: List[float] = [0.0] * self._graph.b
+        num_scenarios: int = len(self._scenarios)
         for block in range(self._graph.b):
-            block_cases = [scenario[block] for scenario in self._scenarios]
-            avg_cases_per_block[block] = sum(block_cases) / num_scenarios
+            # block_cases: List[int] = [scenario[block] for scenario in self._scenarios]
+            avg_cases_per_block[block] = self._infected_per_block[block] #sum(block_cases) / num_scenarios
 
-        sorted_blocks_by_avg_cases = sorted(
+        sorted_blocks_by_avg_cases: List[int] = sorted(
             range(self._graph.b),
             key=lambda b: avg_cases_per_block[b],
             reverse=True
@@ -177,14 +190,16 @@ class SimheuristicFramework:
             arcs: List = self._graph.block_arcs[block]
             total_length_meters = sum(arc.length for arc in arcs)
             total_time_seconds = total_length_meters / speed_m_per_s if speed_m_per_s > 0 else 0
-            if total_time_seconds + block_visiting_time > 5400:
+            if total_time_seconds + block_visiting_time > 3600:
                 break
             block_visiting_time += total_time_seconds
             visited_blocks.append(block)
 
-        logger.info(f"[*] Naive optimization solution: {len(visited_blocks)} blocks with total time {block_visiting_time:.2f} seconds")
         time.sleep(1)
-        return Solution(visited_blocks, 0.0, 0.0)
+        logger.info(f"[*] Naive optimization solution: {len(visited_blocks)} blocks with total time {block_visiting_time:.2f} seconds")
+        solution = Solution(visited_blocks, 0.0, 0.0)
+        self._evaluate_deterministic_solution(solution)
+        return solution
 
     def _check_optimization_status(self):
         try:
@@ -206,7 +221,7 @@ class SimheuristicFramework:
 
     def _compute_start_scenarios(self):
         self._run_id += 1
-        self._call_simulation(max_cycles=180, is_batch=True, is_short=False)
+        self._call_simulation(max_cycles=14, is_batch=True, is_short=False)
         scenarios: List[List[int]] = self._get_scenario_cases_per_block()
         self._scenarios.extend(scenarios)
         self._use_surrogate_model = True
@@ -225,6 +240,12 @@ class SimheuristicFramework:
             self._call_optimization(action="load")
             self._use_surrogate_model = True
         
+        if solution.get_deterministic_of() <= 0.0:
+            deterministic_of = 0.0
+            for b in solution.get_blocks():
+                deterministic_of += self._infected_per_block[b]
+            solution.set_deterministic_of(deterministic_of)
+
         stochastic_of = 0.0
         if self._stochastic_evaluation == "default":
             stochastic_of = self._get_default_stochastic_value(solution, selected_scenarios)
@@ -252,22 +273,22 @@ class SimheuristicFramework:
 
         for scenario in scenarios:
             total_cases: float = 0
-            evited_cases: float = 0
+            avoided_cases: float = 0
 
             for block, cases in enumerate(scenario):
                 total_cases += cases
 
                 if block in solution_blocks:
-                    evited_cases += cases
+                    avoided_cases += cases
 
-            if evited_cases > 0:
-                stochastic_of += ((evited_cases * self._alpha)/total_cases)
+            if avoided_cases > 0:
+                stochastic_of += ((avoided_cases * self._alpha)/total_cases)
 
         return stochastic_of
 
     def _call_simulation(self, max_cycles: int, is_batch: bool = False, is_short: bool = True, nebulize_solution: int = -1):
         logger.info("[*] Running Simulation...")
-        start_date = self._get_run_param("start_date")
+        start_date = self._get_run_param("end_date")
 
         params = Utils.prepare_parameters(
             self._shp_path,
@@ -282,18 +303,28 @@ class SimheuristicFramework:
         header = JsonAdapter.convert_param_2_list(params)
         self._simulation.run_simulation(header, is_batch=is_batch, is_short=is_short)
 
+
     def _get_scenario_cases_per_block(self) -> List[List[int]]:
         logger.info("[*] Extracting and aggregating simulated cases...")
         sim_cases = self._db.query(
             f"SELECT * FROM metrics_infected_people WHERE execution_id = {self._run_id}"
         ).drop_duplicates(subset=["id"])
 
+        b = self._graph.b
+
+        if sim_cases.empty:
+            logger.warning("[!] No simulation cases found, returning single zero scenario.")
+            return [[0] * b]
+
         grouped = sim_cases.groupby(
             ["living_place", "simulation_id"], as_index=False
         ).count()
 
-        b = self._graph.b
-        num_scenarios = np.max(grouped["simulation_id"].unique())
+        if grouped.empty:
+            logger.warning("[!] Grouped data is empty, returning single zero scenario.")
+            return [[0] * b]
+
+        num_scenarios = int(np.max(grouped["simulation_id"].unique()))
 
         all_scenarios = [
             grouped[grouped["simulation_id"] == s]
@@ -304,6 +335,9 @@ class SimheuristicFramework:
         ]
 
         return all_scenarios
+
+    def _delete_cases_from_run_id(self):
+        self._db.query_remove(f"DELETE FROM metrics_infected_people WHERE execution_id = {self._run_id}")
 
     def _compute_metrics(self):
         pass
@@ -333,13 +367,13 @@ class SimheuristicFramework:
 
         # Inital parameters
         city_key = self._get_run_param("city")
-        city, _ = Utils.get_city_info(city_key)
+        city, city_osm_name = Utils.get_city_info(city_key)
         map_size = self._get_run_param("map_size")
         start_date = self._get_run_param("start_date")
         end_date = self._get_run_param("end_date")
 
-        logger.info(f"[*] Loading OSM map: {city} ({map_size})...")
-        osm = OpenStreetMap(city, map_size)
+        logger.info(f"[*] Loading OSM map: {city_osm_name} ({map_size})...")
+        osm = OpenStreetMap(city_osm_name, map_size)
         self._graph: Graph = MapAdapter.convert_osm_to_graph(osm, True)
 
         logger.info("[*] Retrieving dengue cases...")
@@ -358,6 +392,7 @@ class SimheuristicFramework:
                 coord_blocks,
             )
         )
+        print("Starting Num. Infected: ", self._infected_per_block)
         self._write_graph(os.path.join(self._output_folder, "graph.txt"))
 
         logger.info("[*] Creating starting scenario into Database...")
@@ -366,7 +401,7 @@ class SimheuristicFramework:
             simulation_id=0,
             cycle=0,
             started_from_cycle=0,
-            start_date=start_date,
+            start_date=end_date,
             connection=self._db,
         )
 
@@ -499,81 +534,82 @@ class SimheuristicFramework:
         plt.close()
 
     def mabs_naive_analysis(self):
-        # --- 1. Run base scenario (no intervention) ---
-        # self._run_id += 1
-        # base_scenarios: List[List[int]] = self._get_scenario_cases_per_block()
+        """Run naive analysis comparing base vs nebulized scenarios against real data."""
 
-        # --- 2. Run nebulized scenario (with intervention) ---
+        # --- 1. Run nebulized scenario ---
         solution = self._elite_stochastic_solutions[0]
         self._run_id += 1
         self._db.run_query_insert_solution(self._run_id, solution.get_blocks())
-        self._call_simulation(max_cycles=180, is_batch=True, is_short=False, nebulize_solution=self._run_id)
-        # nebulized_scenarios: List[List[int]] = self._get_scenario_cases_per_block()
+        self._call_simulation(
+            max_cycles=180,
+            is_batch=True,
+            is_short=False,
+            nebulize_solution=self._run_id
+        )
 
-        # --- 3. Get real cases per week ---
-        start_date = self._get_run_param("start_date")
-        city_key = get_city_info(self._get_run_param("city"))[0]
-        coord_blocks = Utils.all_blocks_as_polygons(self._graph)
-
-        # Get simulated cases per week (base and nebulized)
-        # We'll use the same approach as in simulation_metrics.py: group by week using event_date
-        def get_weekly_simulated_cases(run_id):
-            df_sim = self._db.query(
-                f"""
+        # --- 2. Helpers ---
+        def get_weekly_simulated_cases_all(run_id):
+            """Return dict of weekly cases per simulation, list of weeks, and raw grouped dataframe."""
+            df = self._db.query(f"""
                 SELECT simulation_id, event_date
                 FROM metrics_infected_people
                 WHERE execution_id = {run_id}
-                """
-            )
-            if df_sim.empty:
-                return {}, []
-            df_sim["event_date"] = pd.to_datetime(df_sim["event_date"])
-            df_sim["week_str"] = df_sim["event_date"].apply(
+            """)
+            if df.empty:
+                return {}, [], []
+
+            df["event_date"] = pd.to_datetime(df["event_date"])
+            df["week_str"] = df["event_date"].apply(
                 lambda d: Utils.last_day_of_week(d).strftime("%Y-%m-%d")
             )
-            df_sim["simulation_id"] = df_sim["simulation_id"].astype(str)
-            df_sim_grouped = (
-                df_sim.groupby(["week_str", "simulation_id"])
-                .size()
-                .reset_index(name="infected")
+            df["simulation_id"] = df["simulation_id"].astype(str)
+
+            grouped = df.groupby(["week_str", "simulation_id"]).size().reset_index(name="infected")
+            weeks = sorted(grouped["week_str"].unique())
+
+            week_to_cases = {
+                week: grouped[grouped["week_str"] == week]["infected"].tolist()
+                for week in weeks
+            }
+            return week_to_cases, weeks, grouped
+
+        def plot_boxplot_with_style(ax, data, positions, color, label, hatch=None, box_linestyle='solid', median_linestyle='solid'):
+            """Plot a styled boxplot with color and return its handle for the legend."""
+            # Use black edge color for all, and hatching for distinction, and apply color
+            bp = ax.boxplot(
+                data,
+                positions=positions,
+                widths=0.35,
+                patch_artist=True,
+                medianprops=dict(color="black", linestyle=median_linestyle, linewidth=2),
+                whiskerprops=dict(color="black", linestyle=box_linestyle),
+                capprops=dict(color="black", linestyle=box_linestyle),
+                boxprops=dict(linestyle=box_linestyle, color="black"),
+                flierprops=dict(markerfacecolor="black", marker="o", markersize=3, alpha=0.3),
             )
-            sim_weeks = sorted(df_sim_grouped["week_str"].unique())
-            # For each week, get the average number of infected across all scenarios
-            avg_per_week = []
-            for week in sim_weeks:
-                weekly_sim = df_sim_grouped[df_sim_grouped["week_str"] == week]["infected"].tolist()
-                avg = np.mean(weekly_sim) if weekly_sim else 0
-                avg_per_week.append(avg)
-            return dict(zip(sim_weeks, avg_per_week)), sim_weeks
+            for patch in bp["boxes"]:
+                patch.set(facecolor=color, edgecolor="black", alpha=1.0, linewidth=1.5, hatch=hatch)
+            return Patch(facecolor=color, edgecolor="black", label=label, hatch=hatch)
 
-        # Get base scenario weekly averages
-        base_avg_per_week, base_weeks = get_weekly_simulated_cases(self._run_id - 1)
-        # Get nebulized scenario weekly averages
-        nebu_avg_per_week, nebu_weeks = get_weekly_simulated_cases(self._run_id)
-
-        # Get all weeks in order
+        # --- 3. Get scenarios data ---
+        base_cases, base_weeks, _ = get_weekly_simulated_cases_all(self._run_id - 1)
+        nebu_cases, nebu_weeks, _ = get_weekly_simulated_cases_all(self._run_id)
         all_weeks = sorted(set(base_weeks) | set(nebu_weeks))
 
         # --- 4. Get real cases per week ---
-        # Try to get real cases from the database
+        start_date = self._get_run_param("start_date")
+        city_key = get_city_info(self._get_run_param("city"))[0]
+        coord_blocks: List[Polygon] = Utils.all_blocks_as_polygons(self._graph)
+
         real_per_week = {}
-        if city_key is not None and coord_blocks is not None:
-            # Get the max simulation date to limit the real cases
-            max_sim_date = None
-            if base_weeks:
-                max_sim_date = max(base_weeks)
-            elif nebu_weeks:
-                max_sim_date = max(nebu_weeks)
-            else:
-                max_sim_date = None
-            if max_sim_date is not None:
-                df_real = self._db.get_notifications_between_dates(
-                    start_date, max_sim_date, city_key
-                )
+        if city_key and coord_blocks:
+            max_sim_date = max(all_weeks) if all_weeks else None
+            if max_sim_date:
+                df_real = self._db.get_notifications_between_dates(start_date, max_sim_date, city_key)
                 if not df_real.empty:
                     df_real = df_real[
-                        (df_real["classification"] != 5)
-                        & df_real.apply(
+                        (df_real["classification"] != 5) &
+                        df_real.apply(
                             lambda row: any(
                                 poly.contains(Point(row["y"], row["x"])) for poly in coord_blocks
                             ),
@@ -585,30 +621,235 @@ class SimheuristicFramework:
                         lambda d: Utils.last_day_of_week(d).strftime("%Y-%m-%d")
                     )
                     real_per_week = df_real.groupby("week_str").size().to_dict()
-        # If not available, fill with zeros
+        # --- 5. Prepare data series ---
         start_num_cases = np.sum(self._infected_per_block)
         real_cases_y = [start_num_cases] + [real_per_week.get(week, 0) for week in all_weeks[1:]]
-        base_sim_y = [start_num_cases] + [base_avg_per_week.get(week, 0) for week in all_weeks[1:]]
-        nebu_sim_y = [start_num_cases] + [nebu_avg_per_week.get(week, 0) for week in all_weeks[1:]]
 
-        # --- 5. Plot ---
-        # Change x-axis from date to enumerate the dates
-        x_vals = list(range(0, len(all_weeks), 1))
+        # Agrupar dados por semana
+        weeks_sorted = [str(w) for w in all_weeks]
+        week_indices = list(range(1, len(weeks_sorted) + 1))
 
-        plt.figure(figsize=(10, 6))
-        plt.plot(x_vals, real_cases_y, label="Real Cases", marker="o", linestyle="-", color="#36454F")
-        plt.plot(x_vals, base_sim_y, label="Avg Simulated Cases", marker="s", linestyle="--", color="#808080")
-        plt.plot(x_vals, nebu_sim_y, label="Avg Simulated Cases (Nebulized)", marker="^", linestyle="--", color="#E57373")
-        plt.xlabel("Week")
-        plt.ylabel("Number of Notifications")
-        plt.title("Weekly Real vs Simulated Cases (Base and Nebulized)")
-        plt.grid(True)
-        plt.xticks(x_vals, x_vals)
-        plt.legend()
+        simulated_data = [[start_num_cases]]
+        simulated_nebu_data = [[start_num_cases]]
+
+        for week in all_weeks[1:]:
+            simulated_data.append(base_cases.get(week, []))
+            simulated_nebu_data.append(nebu_cases.get(week, []))
+
+        # --- 6. Plot results ---
+        plt.figure(figsize=(max(12, len(real_cases_y) * 0.8), 7))
+        ax = plt.gca()
+
+        # Boxplot positions
+        box_width = 0.35
+        pos_sim = [x - box_width / 2 for x in week_indices]
+        pos_nebu = [x + box_width / 2 for x in week_indices]
+
+        # Add boxplots with different hatches and linestyles for B&W distinction
+        legend_handles = []
+        legend_handles.append(
+            plot_boxplot_with_style(
+                ax, simulated_data, pos_sim, "#808080", "Simulated",
+                hatch='o', box_linestyle='solid', median_linestyle='solid'
+            )
+        )
+        legend_handles.append(
+            plot_boxplot_with_style(
+                ax, simulated_nebu_data, pos_nebu, "#008000", "Simulated With Nebulization",
+                hatch='x', box_linestyle='dashed', median_linestyle='dashed'
+            )
+        )
+
+        # Add real cases line (use black, solid line)
+        ax.plot(
+            week_indices,
+            real_cases_y,
+            label="Real Cases",
+            marker="o",
+            linestyle="-",
+            color="black",
+            linewidth=2
+        )
+        legend_handles.append(plt.Line2D([0], [0], color="black", marker="o", label="Real Cases", linewidth=2))
+
+        # Axes labels and title
+        ax.set_xlabel("Week")
+        ax.set_ylabel("Number of Notifications")
+
+        # X-ticks
+        ax.set_xticks(week_indices)
+        ax.set_xticklabels(week_indices)
+
+        # Y-axis grid
+        ax.yaxis.grid(True, which="major", linestyle="--", alpha=0.7)
+        ax.yaxis.grid(True, which="minor", linestyle=":", alpha=0.3)
+        ax.minorticks_on()
+
+        # Legend
+        ax.legend(handles=legend_handles)
+
         plt.tight_layout()
-        plt.savefig(os.path.join(self._output_folder, "weekly_real_vs_simulated_cases.pdf"), format="pdf", bbox_inches="tight")
+        plt.savefig(
+            os.path.join(self._output_folder, "weekly_real_vs_simulated_cases_boxplot.pdf"),
+            format="pdf", bbox_inches="tight"
+        )
         plt.close()
 
+    def risk_naive_analysis(self):
+        boxplot_data = []
+        stats_data = []
+
+        # --- 1. Baseline (no nebulization) ---
+        logger.info("[*] Risk Naive Analysis: Running baseline simulation...")
+        self._run_id += 1
+        self._call_simulation(max_cycles=14, is_batch=True, is_short=False)
+        baseline_scenarios: List[List[int]] = self._get_scenario_cases_per_block()
+        baseline_sums = [sum(s) for s in baseline_scenarios]
+
+        for cs in baseline_sums:
+            boxplot_data.append({
+                "label": "Baseline",
+                "value": cs,
+                "type": "Baseline"
+            })
+        stats_data.append({
+            "id": "Baseline",
+            "min": np.min(baseline_sums),
+            "max": np.max(baseline_sums),
+            "avg": np.mean(baseline_sums),
+            "std": np.std(baseline_sums),
+            "deterministic_of": 0,
+            "stochastic_of": 0.0,
+            "blocks": ""
+        })
+
+        # --- 2. Naive solution (nebulized with naive heuristic) ---
+        logger.info("[*] Risk Naive Analysis: Computing naive solution...")
+        naive_solution = self._call_naive_optimization()
+        self._delete_cases_from_run_id()
+        simulation_id = self._run_id + 1
+        self._db.run_query_insert_solution(simulation_id, naive_solution.get_blocks())
+        self._call_simulation(max_cycles=14, is_batch=True, is_short=False, nebulize_solution=simulation_id)
+        naive_scenarios: List[List[int]] = self._get_scenario_cases_per_block()
+        naive_sums = [sum(s) for s in naive_scenarios]
+
+        naive_stochastic_of = 0.0
+        if self._stochastic_evaluation == "default":
+            naive_stochastic_of = self._get_default_stochastic_value(naive_solution, naive_scenarios)
+        elif self._stochastic_evaluation == "proportional":
+            naive_stochastic_of = self._get_proportional_stochastic_value(naive_solution, naive_scenarios)
+        naive_solution.set_stochastic_of(naive_stochastic_of)
+
+        for cs in naive_sums:
+            boxplot_data.append({
+                "label": f"Naive\nOF={round(naive_solution.get_stochastic_of(), 4)}",
+                "value": cs,
+                "type": "Naive"
+            })
+        stats_data.append({
+            "id": "Naive",
+            "min": np.min(naive_sums),
+            "max": np.max(naive_sums),
+            "avg": np.mean(naive_sums),
+            "std": np.std(naive_sums),
+            "deterministic_of": naive_solution.get_deterministic_of(),
+            "stochastic_of": naive_stochastic_of,
+            "blocks": ",".join(str(b) for b in naive_solution.get_blocks())
+        })
+        logger.info(f"[*] Naive — Det. OF: {naive_solution.get_deterministic_of()}, "
+                     f"Stochastic OF: {round(naive_stochastic_of, 4)}")
+
+        sorted_elite = sorted(
+            self._elite_stochastic_solutions,
+            key=lambda s: s.get_stochastic_of(),
+            reverse=True
+        )
+
+        for idx, solution in enumerate(sorted_elite):
+            simulation_id += 1
+            self._delete_cases_from_run_id()
+            self._db.run_query_insert_solution(simulation_id, solution.get_blocks())
+            self._call_simulation(max_cycles=14, is_batch=True, is_short=False, nebulize_solution=simulation_id)
+            sol_scenarios: List[List[int]] = self._get_scenario_cases_per_block()
+            sol_sums = [sum(s) for s in sol_scenarios]
+
+            if self._stochastic_evaluation == "default":
+                stochastic_of = self._get_default_stochastic_value(solution, sol_scenarios)
+            elif self._stochastic_evaluation == "proportional":
+                stochastic_of = self._get_proportional_stochastic_value(solution, sol_scenarios)
+            
+            solution.set_stochastic_of(stochastic_of)
+            sol_label = f"Elite {idx + 1}\nOF={round(stochastic_of, 4)}"
+            logger.info(f"[*] Risk Naive Analysis: Evaluating elite solution {idx + 1}/{len(sorted_elite)}, attending {len(solution.get_blocks())} blocks with Det. OF {solution.get_deterministic_of()} and Stochastic OF {round(solution.get_stochastic_of(), 4)}...")
+            for cs in sol_sums:
+                boxplot_data.append({
+                    "label": sol_label,
+                    "value": cs,
+                    "type": "Elite"
+                })
+            stats_data.append({
+                "id": f"Elite_{idx + 1}",
+                "min": np.min(sol_sums),
+                "max": np.max(sol_sums),
+                "avg": np.mean(sol_sums),
+                "std": np.std(sol_sums),
+                "deterministic_of": solution.get_deterministic_of(),
+                "stochastic_of": stochastic_of,
+                "blocks": ",".join(str(b) for b in solution.get_blocks())
+            })
+            logger.info(f"[*] Elite {idx + 1} — Det. OF: {solution.get_deterministic_of()}, "
+                         f"Stochastic OF: {round(stochastic_of, 4)}")
+
+        # --- 4. Save stats ---
+        stats_df = pd.DataFrame(stats_data)
+        stats_path = os.path.join(self._output_folder, "risk_naive_analysis_stats.csv")
+        stats_df.to_csv(stats_path, index=False)
+        logger.info(f"[*] Saved stats to {stats_path}")
+
+        # --- 5. Plot boxplot ---
+        df = pd.DataFrame(boxplot_data)
+        label_order = ["Baseline"] + [f"Naive\nOF={round(naive_solution.get_stochastic_of(), 4)}"] + [
+            f"Elite {i + 1}\nOF={round(s.get_stochastic_of(), 4)}"
+            for i, s in enumerate(sorted_elite)
+        ]
+
+        num_columns = len(label_order)
+        width = max(10, 2.5 * num_columns)
+        fig, ax = plt.subplots(figsize=(width, 7))
+
+        palette = {"Baseline": "#4C72B0", "Naive": "#DD8452", "Elite": "#55A868"}
+        sns.boxplot(
+            x="label",
+            y="value",
+            hue="type",
+            data=df,
+            order=label_order,
+            hue_order=["Baseline", "Naive", "Elite"],
+            palette=palette,
+            dodge=False,
+            width=0.5,
+            ax=ax,
+        )
+
+        ax.set_xlabel("Solution")
+        ax.set_ylabel("Total Cases per Scenario")
+        ax.set_title("Risk Analysis: NoIntervention vs Naive vs Elite Solutions")
+        ax.yaxis.grid(True, which="major", linestyle="--", alpha=0.7)
+        ax.yaxis.grid(True, which="minor", linestyle=":", alpha=0.3)
+        ax.minorticks_on()
+        ax.legend(title="Algorithm")
+
+        plt.tight_layout()
+        plt.savefig(
+            os.path.join(self._output_folder, "risk_naive_analysis_boxplot.png"),
+            dpi=200, bbox_inches="tight"
+        )
+        plt.savefig(
+            os.path.join(self._output_folder, "risk_naive_analysis_boxplot.pdf"),
+            format="pdf", bbox_inches="tight"
+        )
+        plt.close()
+        logger.info("[*] Risk Naive Analysis complete.")
 
     def run(self, socket_str: str, max_time_seconds: int = 120, elite_size: int = 10, max_iters_with_surrogate: int = 100):
         self._create_base_environment()
@@ -628,9 +869,8 @@ class SimheuristicFramework:
         if self._check_optimization_status():            
             logger.info("[*] Generating start scenarios (Long Simulation of 14 cycles)...")
             self._compute_start_scenarios()
-            # start_solution = self._call_optimization(action="load")
-            start_solution = self._call_naive_optimization()
-            # start_solution = self._call_optimization(action="run")
+            start_solution = self._call_optimization(action="load")
+            start_solution = self._call_optimization(action="run")
         else:
             logger.error("[!] Optimization executable not connected after multiple attempts.")
             return
@@ -651,8 +891,7 @@ class SimheuristicFramework:
         
         while elapsed_time < max_time_seconds:
             opt_start_time = time.time()
-            # new_det_solution = self._call_optimization(action="run")
-            new_det_solution = self._call_naive_optimization()
+            new_det_solution = self._call_optimization(action="run")
 
             if (new_det_solution is None):
                 logger.error("[!] Failed to receive response from optimization after multiple attempts.")
@@ -683,7 +922,7 @@ class SimheuristicFramework:
         
         risk_start_time = time.time()
         # self.risk_analysis()
-        self.mabs_naive_analysis()
+        self.risk_naive_analysis()
         logger.info(f"Risk analysis time: {time.time() - risk_start_time:.2f} seconds")
 
         # Clean up
