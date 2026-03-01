@@ -2,7 +2,8 @@ import os, zmq, subprocess, time, heapq, threading
 import numpy as np
 from typing import List
 from datetime import datetime, timedelta
-from venv import logger
+import logging
+logger = logging.getLogger(__name__)
 from shapely import Polygon, Point
 import adapters.json.json_adapter as JsonAdapter
 from domain.osm import OpenStreetMap

@@ -1,7 +1,8 @@
 from typing import List
 from datetime import datetime, timedelta
 import math, os
-from venv import logger
+import logging
+logger = logging.getLogger(__name__)
 import numpy as np
 import pandas as pd
 from shapely.geometry import Point, Polygon

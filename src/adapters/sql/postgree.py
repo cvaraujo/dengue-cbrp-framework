@@ -1,5 +1,6 @@
 from typing import List
-from venv import logger
+import logging
+logger = logging.getLogger(__name__)
 import pandas as pd
 import logging
 from sqlalchemy import create_engine, text

@@ -3,7 +3,8 @@ from typing import List
 from matplotlib import legend
 import pandas as pd
 from datetime import datetime
-from venv import logger
+import logging
+logger = logging.getLogger(__name__)
 
 from shapely import Polygon, Point
 import adapters.json.json_adapter as JsonAdapter

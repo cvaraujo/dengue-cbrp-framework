@@ -1,7 +1,8 @@
 import os
 from typing import List
 from datetime import datetime
-from venv import logger
+import logging
+logger = logging.getLogger(__name__)
 import adapters.json.json_adapter as JsonAdapter
 from domain.osm import OpenStreetMap
 from domain.graph import Graph

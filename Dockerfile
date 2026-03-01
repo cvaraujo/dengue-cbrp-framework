@@ -40,8 +40,9 @@ RUN apt-get update && \
 
 # Add PostgreSQL 16 APT repository and install PostgreSQL 16 and PostGIS 3
 RUN apt-get update && \
-    wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - && \
-    echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
+    mkdir -p /etc/apt/keyrings && \
+    wget --quiet -O /etc/apt/keyrings/pgdg.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc && \
+    echo "deb [signed-by=/etc/apt/keyrings/pgdg.asc] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
     postgresql-16 \
@@ -103,11 +104,17 @@ RUN mkdir -p /external-libs/gama && \
 
 RUN chmod -R 777 /external-libs/gama/headless
 
-# Download and extract Boost 1.88.0 to /opt
-RUN wget -q https://archives.boost.io/release/1.88.0/source/boost_1_88_0.tar.gz -O /tmp/boost_1_88_0.tar.gz && \
+# Increase GAMA JVM memory to 64GB for large experiments
+RUN sed -i 's/-Xms8192m/-Xms65536m/g' /external-libs/gama/Gama.ini && \
+    sed -i 's/-Xmx8192m/-Xmx65536m/g' /external-libs/gama/Gama.ini && \
+    sed -i 's/-Xmn2048m/-Xmn8192m/g' /external-libs/gama/Gama.ini && \
+    sed -i 's/-Xms8192m/-Xms65536m/g' /external-libs/gama/headless/gama-headless.sh
+
+# Download and extract Boost 1.90.0 to /opt
+RUN wget -q https://archives.boost.io/release/1.90.0/source/boost_1_90_0.tar.gz -O /tmp/boost_1_90_0.tar.gz && \
     mkdir -p /opt && \
-    tar -xzf /tmp/boost_1_88_0.tar.gz -C /opt && \
-    rm /tmp/boost_1_88_0.tar.gz
+    tar -xzf /tmp/boost_1_90_0.tar.gz -C /opt && \
+    rm /tmp/boost_1_90_0.tar.gz
 
 # Download and extract LEMON 1.3.1 to /opt
 RUN wget -q http://lemon.cs.elte.hu/pub/sources/lemon-1.3.1.zip -O /tmp/lemon-1.3.1.zip && \
@@ -118,6 +125,12 @@ RUN wget -q http://lemon.cs.elte.hu/pub/sources/lemon-1.3.1.zip -O /tmp/lemon-1.
 WORKDIR /opt/lemon-1.3.1
 RUN cmake . && \
     make -j
+WORKDIR /app
+
+# Pre-compile cbrp-simheur so it's ready at runtime (make will be a no-op if unchanged)
+WORKDIR /external-libs/simheuristic/cbrp-simheuristic
+RUN cmake . && \
+    make cbrp-simheur -j
 WORKDIR /app
 
 # Set up a base for C++ builds with CMake

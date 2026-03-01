@@ -1071,7 +1071,7 @@ experiment long_headless_dengue_propagation type: batch keep_seed: true until: (
 	parameter "Scenario number" var: start_from_scenario category: "int" init: 1;
 	parameter "Cycle number" var: start_from_cycle category: "int" init: 0;
 	parameter "Save" var: save_states category: "bool" init: false;
-	parameter "Nebulizer Efficiency" var: nebulizer_efficiency category: "float" init: 0.9;
+	parameter "Nebulizer Efficiency" var: nebulizer_efficiency category: "float" init: 0.8;
 	parameter "OPT Solution id" var: solution_id category: "int" init: 1;
 }
 
@@ -1097,7 +1097,7 @@ experiment short_headless_dengue_propagation type: batch keep_seed: true until: 
 	parameter "Scenario number" var: start_from_scenario category: "int" init: 1;
 	parameter "Cycle number" var: start_from_cycle category: "int" init: 0;
 	parameter "Save" var: save_states category: "bool" init: false;
-	parameter "Nebulizer Efficiency" var: nebulizer_efficiency category: "float" init: 0.9;
+	parameter "Nebulizer Efficiency" var: nebulizer_efficiency category: "float" init: 0.8;
 	parameter "OPT Solution id" var: solution_id category: "int" init: 1;
 }
 
