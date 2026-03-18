@@ -64,5 +64,5 @@ if [ -f "/app/simulation/data/script.sql" ]; then
   su - postgres -c "psql -v ON_ERROR_STOP=1 --dbname=$POSTGRES_DB -f /app/simulation/data/script.sql"
 fi
 
-# Keep container running (optionally run your app here)
-exec /bin/bash
+# Execute the CMD passed to the container (e.g. bash -c '...' from docker run)
+exec "$@"

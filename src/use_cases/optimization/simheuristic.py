@@ -134,12 +134,22 @@ class SimheuristicFramework:
             exit(1)
         time.sleep(10)
         
+    def _reset_socket(self):
+        self._socket.close()
+        self._socket = self._context.socket(zmq.REQ)
+        self._socket.connect(self._socket_str)
+        self._socket.setsockopt(zmq.RCVTIMEO, self._socket_default_timeout)
+        self._socket.setsockopt(zmq.LINGER, 0)
+
     def _call_optimization(self, action: str = "run") -> Solution | None:
         message = action
         if action == "load":
             message += f":{self._run_id}"
         if action == "run":
             message += f":{self._objective_function}"
+
+        timeout = self._socket_run_timeout if action == "run" else self._socket_default_timeout
+        self._socket.setsockopt(zmq.RCVTIMEO, timeout)
 
         logger.info(f"[*] Preparing to send message to optimization: {message}")
 
@@ -164,9 +174,14 @@ class SimheuristicFramework:
 
             except zmq.Again:
                 logger.warning(f"[!] Timeout waiting for response (attempt {attempt})")
+                self._reset_socket()
+                self._socket.setsockopt(zmq.RCVTIMEO, timeout)
                 time.sleep(self._socket_retry_interval)
             except zmq.ZMQError as e:
                 logger.error(f"[!] ZMQ Error: {e}")
+                self._reset_socket()
+                self._socket.setsockopt(zmq.RCVTIMEO, timeout)
+                time.sleep(self._socket_retry_interval)
 
         logger.error("[!] Failed to receive response from optimization after multiple attempts.")
         return None
@@ -393,7 +408,7 @@ class SimheuristicFramework:
                 coord_blocks,
             )
         )
-        print("Starting Num. Infected: ", self._infected_per_block)
+        logger.info(f"[*]Starting Num. Infected: {self._infected_per_block}")
         self._write_graph(os.path.join(self._output_folder, "graph.txt"))
 
         logger.info("[*] Creating starting scenario into Database...")
@@ -434,8 +449,7 @@ class SimheuristicFramework:
         self._call_simulation(max_cycles=0, is_batch=False)
 
     def clear_run(self):
-        pass
-        # self._db.clear_database()
+        self._db.clear_database()
         # self._simulation.kill_gama_headless()
 
     def risk_analysis(self):
@@ -707,9 +721,10 @@ class SimheuristicFramework:
         baseline_scenarios: List[List[int]] = self._get_scenario_cases_per_block()
         baseline_sums = [sum(s) for s in baseline_scenarios]
 
+        baseline_avg = np.mean(baseline_sums)
         for cs in baseline_sums:
             boxplot_data.append({
-                "label": "Baseline",
+                "label": f"Baseline\nAVG = {baseline_avg:.1f}",
                 "value": cs,
                 "type": "Baseline"
             })
@@ -741,9 +756,10 @@ class SimheuristicFramework:
             naive_stochastic_of = self._get_proportional_stochastic_value(naive_solution, naive_scenarios)
         naive_solution.set_stochastic_of(naive_stochastic_of)
 
+        naive_avg = np.mean(naive_sums)
         for cs in naive_sums:
             boxplot_data.append({
-                "label": f"Naive\nOF={round(naive_solution.get_stochastic_of(), 4)}",
+                "label": f"Naive\nAVG = {naive_avg:.1f}",
                 "value": cs,
                 "type": "Naive"
             })
@@ -780,7 +796,8 @@ class SimheuristicFramework:
                 stochastic_of = self._get_proportional_stochastic_value(solution, sol_scenarios)
             
             solution.set_stochastic_of(stochastic_of)
-            sol_label = f"Elite {idx + 1}\nOF={round(stochastic_of, 4)}"
+            sol_avg = np.mean(sol_sums)
+            sol_label = f"Elite {idx + 1}\nAVG = {sol_avg:.1f}"
             logger.info(f"[*] Risk Naive Analysis: Evaluating elite solution {idx + 1}/{len(sorted_elite)}, attending {len(solution.get_blocks())} blocks with Det. OF {solution.get_deterministic_of()} and Stochastic OF {round(solution.get_stochastic_of(), 4)}...")
             for cs in sol_sums:
                 boxplot_data.append({
@@ -809,16 +826,16 @@ class SimheuristicFramework:
 
         # --- 5. Plot boxplot ---
         df = pd.DataFrame(boxplot_data)
-        label_order = ["Baseline"] + [f"Naive\nOF={round(naive_solution.get_stochastic_of(), 4)}"] + [
-            f"Elite {i + 1}\nOF={round(s.get_stochastic_of(), 4)}"
-            for i, s in enumerate(sorted_elite)
-        ]
+        label_order = [f"Baseline\nAVG = {baseline_avg:.1f}"] + \
+            [f"Naive\nAVG = {naive_avg:.1f}"] + \
+            df[df["type"] == "Elite"]["label"].unique().tolist()
 
         num_columns = len(label_order)
         width = max(10, 2.5 * num_columns)
         fig, ax = plt.subplots(figsize=(width, 7))
 
         palette = {"Baseline": "#4C72B0", "Naive": "#DD8452", "Elite": "#55A868"}
+        box_width = 0.5
         sns.boxplot(
             x="label",
             y="value",
@@ -828,9 +845,26 @@ class SimheuristicFramework:
             hue_order=["Baseline", "Naive", "Elite"],
             palette=palette,
             dodge=False,
-            width=0.5,
+            width=box_width,
             ax=ax,
         )
+
+        for i, lbl in enumerate(label_order):
+            subset = df[df["label"] == lbl]["value"]
+            q1 = subset.quantile(0.25)
+            q3 = subset.quantile(0.75)
+            iqr = q3 - q1
+            median = subset.median()
+            whisker_lo = subset[subset >= q1 - 1.5 * iqr].min()
+            whisker_hi = subset[subset <= q3 + 1.5 * iqr].max()
+
+            x_offset = box_width / 2 + 0.05
+            ax.text(i + x_offset, median, f" {median:.1f}",
+                    va="center", ha="left", fontsize=8, fontweight="bold")
+            ax.text(i + x_offset, whisker_hi, f" {whisker_hi:.0f}",
+                    va="bottom", ha="left", fontsize=7, color="#444444")
+            ax.text(i + x_offset, whisker_lo, f" {whisker_lo:.0f}",
+                    va="top", ha="left", fontsize=7, color="#444444")
 
         ax.set_xlabel("Solution")
         ax.set_ylabel("Total Cases per Scenario")
@@ -859,11 +893,13 @@ class SimheuristicFramework:
         # Socket configuration
         self._socket_str = socket_str
         self._context = zmq.Context()
+        self._socket_max_retries = 5
+        self._socket_retry_interval = 2
+        self._socket_default_timeout = 300
+        self._socket_run_timeout = 6000
         self._socket = self._context.socket(zmq.REQ)
         self._socket.connect(self._socket_str)
-        self._socket_max_retries = 5
-        self._socket_retry_interval = 1
-        self._socket.setsockopt(zmq.RCVTIMEO, 1000)
+        self._socket.setsockopt(zmq.RCVTIMEO, self._socket_default_timeout)
         self._socket.setsockopt(zmq.LINGER, 0)
 
         logger.info("[*] Computing first solution...")

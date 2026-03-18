@@ -3,11 +3,10 @@ import logging, time
 from use_cases.optimization.simheuristic import SimheuristicFramework
 from use_cases.simulation import Simulation
 import sys
+from itertools import product
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-# python3 -m venv .venv
 
 default_as_sim_params = {
     "people_per_km2": 0.01,
@@ -19,11 +18,11 @@ default_as_sim_params = {
 }
 
 default_lm_sim_params = {
-    "people_per_km2": 0.003,
-    "mosquitoes_per_person": 1.0,
-    "nb_breeding_sites": 300,
-    "proportion_infected_mosquitoes_without_cases": 0.2,
-    "proportion_infected_mosquitoes_with_cases": 0.9,
+    "people_per_km2": 0.004,
+    "mosquitoes_per_person": 1.5,
+    "nb_breeding_sites": 500,
+    "proportion_infected_mosquitoes_without_cases": 0.1,
+    "proportion_infected_mosquitoes_with_cases": 0.95,
     "num_scenarios_evaluation": 20,
 }
 
@@ -51,51 +50,36 @@ default_connection_params = {
     }
 }
 
-# local run example: 
-# python3 src/main.py local default 20 10 500 AS 700 2017-01-08 2017-01-15 /home/carlos/Documentos/dengue-cbrp-framework/simheuristic_runs/run_DEFAULT_10_500_AS_700_2017-01-08_2017-01-15/
+BATCH_DATES = {
+    "AS": [],
+    "LM": [
+        ("2020-06-21", "2020-06-28"),
+        ("2020-07-05", "2020-07-12"),
+        ("2020-07-19", "2020-07-26"),
+        ("2020-07-26", "2020-08-02"),
+    ],
+}
 
-# Docker run example: 
-# python3 src/main.py docker default 1800 10 500 AS 700 2017-01-08 2017-01-15 /app/run_DEFAULT_10_500_AS_700_2017-01-08_2017-01-15/
+BATCH_PARAMS = {
+    "alphas": [0.9],
+    "map_sizes": [1000],
+    "max_iters_with_surrogate": [500],
+    "runtime": 90,
+    "elite_size": 5,
+    "stochastic_evaluation": "default",
+    "objective_function": "FULL",
+    "default_route_time": "1200",
+}
 
-if __name__ == "__main__":
-    args = sys.argv
-    run_mode: str = "local"
-    default_route_time: str = "1200"
-    alpha_model: float = 0.8
-    max_run_time: int = 1
-    elite_size: int = 1
-    max_iters_with_surrogate: int = 500
-    city: str = "LM"
-    map_size: int = 2000
-    start_date: str = "2020-06-28"
-    end_date: str = "2020-07-05"
-    output_folder: str = "/home/carlos/Documentos/dengue-cbrp-framework/temp/simulation_metrics"
-    stochastic_evaluation: str = "default"
-    objective_function: str = "FULL"
 
-    if len(args) > 1:
-        run_mode = args[1] # local or docker
-        # Simheuristic parameters
-        stochastic_evaluation = args[2] # default or proportional
-        max_run_time = int(args[3]) # 1800
-        elite_size = int(args[4]) # 10
-        max_iters_with_surrogate = int(args[5]) # 500
-        # Simulation/City parameters
-        city = args[6] # AS or LM
-        map_size = int(args[7]) # 700
-        start_date = args[8] # 2017-01-08
-        end_date = args[9] # 2017-01-15
-        output_folder = args[10] # temp/simulation_metrics
-
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder, exist_ok=True)
-
-    if city == "AS":
-        sim_params = default_as_sim_params
-    else:
-        sim_params = default_lm_sim_params
-    
+def run_single_experiment(
+    run_mode, city, map_size, start_date, end_date, alpha,
+    max_run_time, elite_size, max_iters, stochastic_evaluation,
+    objective_function, output_folder, default_route_time="1200"
+):
+    sim_params = default_as_sim_params if city == "AS" else default_lm_sim_params
     city_name = city_info_map.get(city, "Limoeiro do Norte, Ceará, Brasil")
+    conn = default_connection_params[run_mode] if run_mode in default_connection_params else default_connection_params["docker"]
 
     run_params = {
         "city": city_name,
@@ -103,30 +87,134 @@ if __name__ == "__main__":
         "start_date": start_date,
         "end_date": end_date,
     }
-
-    if run_mode == "local":
-        connection_params = default_connection_params["local"]
-    else:
-        connection_params = default_connection_params["docker"]
-
-    socket_str = connection_params["socket_str"]
-    project_dir = connection_params["project_dir"]
-    executable_path = connection_params["executable_path"]
     opt_params = {
-        "project_dir": project_dir,
-        "executable_path": executable_path,
-        "socket_str": socket_str,
-        "max_time_route": default_route_time
+        "project_dir": conn["project_dir"],
+        "executable_path": conn["executable_path"],
+        "socket_str": conn["socket_str"],
+        "max_time_route": default_route_time,
     }
 
-    server_path = connection_params["server_path"]
-    server_port = connection_params["server_port"]
-    model = connection_params["model"]
-    
+    os.makedirs(output_folder, exist_ok=True)
+
     start_time = time.time()
-    simulation = Simulation(server_path, server_port, model)
-    simheuristic = SimheuristicFramework(output_folder, run_params, sim_params, opt_params, simulation, alpha_model=alpha_model, stochastic_evaluation=stochastic_evaluation, objective_function=objective_function)
-    
-    simheuristic.run(socket_str, max_run_time, elite_size, max_iters_with_surrogate)
-    logger.info(f"Total time: {time.time() - start_time:.2f} seconds")
+    simulation = Simulation(conn["server_path"], conn["server_port"], conn["model"])
+    simheuristic = SimheuristicFramework(
+        output_folder, run_params, sim_params, opt_params, simulation,
+        alpha_model=alpha, stochastic_evaluation=stochastic_evaluation,
+        objective_function=objective_function,
+    )
+
+    simheuristic.run(conn["socket_str"], max_run_time, elite_size, max_iters)
+    elapsed = time.time() - start_time
+    logger.info(f"Experiment finished in {elapsed:.2f}s -> {output_folder}")
     simheuristic.clear_run()
+
+
+def run_batch(run_mode, base_output):
+    cities = list(BATCH_DATES.keys())
+    alphas = BATCH_PARAMS["alphas"]
+    map_sizes = BATCH_PARAMS["map_sizes"]
+    iters_list = BATCH_PARAMS["max_iters_with_surrogate"]
+    runtime = BATCH_PARAMS["runtime"]
+    elite_size = BATCH_PARAMS["elite_size"]
+    stochastic_eval = BATCH_PARAMS["stochastic_evaluation"]
+    obj_func = BATCH_PARAMS["objective_function"]
+    route_time = BATCH_PARAMS["default_route_time"]
+
+    experiments = []
+    for city in cities:
+        for (start_date, end_date) in BATCH_DATES[city]:
+            for map_size, alpha, max_iters in product(map_sizes, alphas, iters_list):
+                folder_name = (
+                    f"{city}_{start_date}_map{map_size}"
+                    f"_alpha{alpha}_iters{max_iters}"
+                )
+                output_folder = os.path.join(base_output, city, folder_name)
+                experiments.append({
+                    "city": city,
+                    "map_size": map_size,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "alpha": alpha,
+                    "max_iters": max_iters,
+                    "output_folder": output_folder,
+                })
+
+    total = len(experiments)
+    logger.info(f"=== BATCH MODE: {total} experiments to run ===")
+    batch_start = time.time()
+
+    for i, exp in enumerate(experiments, 1):
+        logger.info(
+            f"=== [{i}/{total}] {exp['city']} | {exp['start_date']} | "
+            f"map={exp['map_size']} | alpha={exp['alpha']} | iters={exp['max_iters']} ==="
+        )
+        try:
+            run_single_experiment(
+                run_mode=run_mode,
+                city=exp["city"],
+                map_size=exp["map_size"],
+                start_date=exp["start_date"],
+                end_date=exp["end_date"],
+                alpha=exp["alpha"],
+                max_run_time=runtime,
+                elite_size=elite_size,
+                max_iters=exp["max_iters"],
+                stochastic_evaluation=stochastic_eval,
+                objective_function=obj_func,
+                output_folder=exp["output_folder"],
+                default_route_time=route_time,
+            )
+        except Exception as e:
+            logger.error(f"=== FAILED [{i}/{total}]: {e} ===", exc_info=True)
+
+    total_time = time.time() - batch_start
+    logger.info(f"=== BATCH COMPLETE: {total} experiments in {total_time:.2f}s ===")
+
+
+# Single run:
+#   python3 src/main-simheuristic.py docker default 600 5 500 AS 1000 2017-01-08 2017-01-15 /app/output/
+#
+# Batch run:
+#   python3 src/main-simheuristic.py batch docker /app/simheuristic_runs
+#   python3 src/main-simheuristic.py batch local /home/carlos/Documentos/dengue-cbrp-framework/simheuristic_runs
+
+if __name__ == "__main__":
+    args = sys.argv
+
+    if len(args) > 1 and args[1] == "batch":
+        run_mode = args[2] if len(args) > 2 else "docker"
+        base_output = args[3] if len(args) > 3 else "/app/simheuristic_runs"
+        run_batch(run_mode, base_output)
+
+    elif len(args) > 1:
+        run_mode = args[1]
+        stochastic_evaluation = args[2]
+        max_run_time = int(args[3])
+        elite_size = int(args[4])
+        max_iters_with_surrogate = int(args[5])
+        city = args[6]
+        map_size = int(args[7])
+        start_date = args[8]
+        end_date = args[9]
+        output_folder = args[10]
+
+        run_single_experiment(
+            run_mode=run_mode,
+            city=city,
+            map_size=map_size,
+            start_date=start_date,
+            end_date=end_date,
+            alpha=0.8,
+            max_run_time=max_run_time,
+            elite_size=elite_size,
+            max_iters=max_iters_with_surrogate,
+            stochastic_evaluation=stochastic_evaluation,
+            objective_function="FULL",
+            output_folder=output_folder,
+        )
+
+    else:
+        logger.info("Usage:")
+        logger.info("  Batch:  python3 src/main-simheuristic.py batch <local|docker> <output_base_dir>")
+        logger.info("  Single: python3 src/main-simheuristic.py <local|docker> <eval> <time> <elite> <iters> <city> <map> <start> <end> <output>")
