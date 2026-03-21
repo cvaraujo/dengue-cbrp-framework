@@ -31,7 +31,7 @@ global {
 	// Map network
 	graph road_network;
 	// Load data from old simulation
-	bool use_initial_scenario <- true;
+	bool use_initial_scenario <- false;
 	
 	
 	// Start from cycle
@@ -49,22 +49,23 @@ global {
 	bool save_metrics <- false;
 	
 	// Default number of species
-	int nb_people <- 14;
-	int nb_breeding_sites <- 3;
-	int nb_mosquitoes <- 20;
+	int nb_people <- 100;
+	int nb_breeding_sites <- 50;
+	int nb_mosquitoes <- 500;
 	int nb_infected_people <- 15;
-	int nb_infected_mosquitoes <- 20;
+	int nb_infected_mosquitoes <- 100;
 	
 	// Counter of species
 	int cnt_people <- 0;
 	int cnt_breeding_sites <- 0;
 	int cnt_mosquitoes <- 0;
-	
+	 
 	// ----------------------------------------------------------
 	// ----------------------- Map data -------------------------
 	// ----------------------------------------------------------
 	// Filename of buildings and roads
-	string default_shp_dir <- "../includes";
+	string default_shp_dir <- "/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/src/includes/ALTO SANTO_700";
+	string output_dir <- "/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/experiments/";
 	string node_filename <- default_shp_dir + "/nodes.shp";
 	string road_filename <- default_shp_dir + "/edges.shp";
 	string building_filename <- default_shp_dir + "/buildings.shp";	
@@ -133,18 +134,57 @@ global {
 	int solution_id <- -1;
 	list<bool> need_nebulize;
 	
+	float vaccine_efficacy <- 0.8;
+	float prop_vaccinated <- 0.1;
+	bool vaccination_mode <- false;
+	
 	bool kill_mosquitoes <- false;
 	int nb_blocks_to_kill <- 5;
-	float simulation_seed <- 0;
+	float simulation_seed <- 0.0;
 	float elapsed_days <- 0.0;
 	int weekday <- 0;
 	int total_infections <- 0;
-	int new_mosquitoes <- 0;
 	
+	int new_mosquitoes <- 0;	
+	int dead_mosquitoes <- 0;
+	list<int> new_mosquitoes_series <- list_with(max_cycles+1, 0);
+	list<int> dead_mosquitoes_series <- list_with(max_cycles+1, 0);
+	int no_bs_close <- 0;
+	int bs_close <- 0;
+	int min_distance_to_oviposition <- 100;
+	
+	
+	int mosquitoes_t0;        // população após burn-in
+	int mosquitoes_t1;        // população após janela de medição
+	float mosquito_growth_rate;
+	string mosquito_regime;
 
 	// ----------------------------------------------------------
 	// -------------------- Global actions ----------------------
 	// ----------------------------------------------------------
+	
+	// Salva população após período de aquecimento
+	reflex record_population_t0 when: cycle = 1 {
+	    mosquitoes_t0 <- length(Mosquitoes);
+	}
+	
+	// Calcula crescimento médio após janela fixa
+	reflex compute_growth_rate when: cycle = max_cycles - 2 {
+	
+	    mosquitoes_t1 <- length(Mosquitoes);
+	
+	    mosquito_growth_rate <- 
+	        (mosquitoes_t1 - mosquitoes_t0) / max(1.0, mosquitoes_t0);
+	
+	    // Classificação automática do regime
+	    if abs(mosquito_growth_rate) < 0.01 {
+	        mosquito_regime <- "stable";
+	    } else if mosquito_growth_rate > 0 {
+	        mosquito_regime <- "growing";
+	    } else {
+	        mosquito_regime <- "declining";
+	    }
+	}
 		
 	reflex update_seed{
 		seed <- simulation_seed;
@@ -152,7 +192,10 @@ global {
 	}
 	
 	reflex reset_new_mosquitoes_count{
+		new_mosquitoes_series[cycle] <- new_mosquitoes;		
+		dead_mosquitoes_series[cycle] <- dead_mosquitoes;			
 		new_mosquitoes <- 0;
+		dead_mosquitoes <- 0;
 		//write "reset mosquitoes";
 	}
 	
@@ -170,7 +213,6 @@ global {
 		
 		if(current_date.hour = 5 and current_date != starting_date){
 			if(weekday = 7){
-				weekday <- 0;				
 			} 
 			
 			weekday <- weekday + 1;			
@@ -211,6 +253,10 @@ global {
 		
 	   end_simulation <- true;
 	   write "end simulation";
+	   write "number of times there were no bs close: " + no_bs_close;
+	   write "number of times there were a bs close: " + bs_close;
+	   write "new mosquitoes total: " + sum(new_mosquitoes_series);
+	   write "dead mosquitoes total: " + sum(dead_mosquitoes_series);
 		do pause;
 		
 		//loop i from: 0 to: max_cycles {
@@ -225,7 +271,10 @@ global {
 		// Get the number of blocks
 		int num_blocks <- Roads max_of(each.block_id);
 		
+		
 		loop i from: 0 to: num_blocks {
+			write "" + i + " block out of " + num_blocks;
+			
 			// Get the roads and vertices of the block
 			list<Roads> block_roads <- Roads where (each.block_id = i);
 			list nodes <- block_roads collect([each.u, each.v]);
@@ -271,7 +320,7 @@ global {
 			building_location <- one_of(Buildings);
 			location <- any_location_in(building_location);
 			buildings <- [building_location] + Buildings at_distance(max_move_radius);
-			new_eggs <- rnd(0, 1) * mosquitoes_max_carrying_capacity;
+			new_eggs <- 0;
 		}
 		
 		// Creating Mosquitoes
@@ -322,13 +371,13 @@ global {
 			" and simulation_id=" + string(start_from_scenario) + " and cycle=" + string(start_from_cycle) + "; ";
 		}
 					
-		write "[!] Removing Old Data from Database...";
+		/*write "[!] Removing Old Data from Database...";
 		ask Saver {
 			do executeUpdate(
 				params: POSTGRES,
 				updateComm: delete_query
 			);
-		}
+		}*/
 				
 		// --------------------------------- Mosquitoes ---------------------------------
 		string prefix <- "(" + string(start_from_execution_id) + ", " + string(start_from_scenario) + ", " + string(start_from_cycle + cycle) + ", " + string(start_from_cycle);
@@ -343,7 +392,7 @@ global {
 		ask Mosquitoes {
 			query_mosquitoes <- query_mosquitoes + prefix + ", '" + self.name + "', " + string(self.id) + ", '" + string(self.date_of_birth) +
 			"' , " + string(self.speed) + ", " + string(self.state) + ", " + string(self.current_building.id) +
-			", " + string(self.breeding_site.id) + ", " + string(self.location.x) + ", " + string(self.location.y) + ")";
+			", " + string(self.breeding_site.id) + ", " + string(self.location.x) + ", " + string(self.location.y) + ")";			
 			if cnt < nb {
 				query_mosquitoes <- query_mosquitoes + ", ";
 			} else {
@@ -396,13 +445,13 @@ global {
 			cnt <- cnt + 1;
 		}
 		
-		write "[!] Inserting New Data into Database...";
+		/*write "[!] Inserting New Data into Database...";
 		ask Saver {
 			do executeUpdate(
 				params: POSTGRES,
 				updateComm: query_mosquitoes + query_people + query_bs
 			);
-		}
+		}*/
 	}
 	
 	action load_starting_scenario {		
@@ -561,10 +610,14 @@ global {
 			}
 		}
 		
-		if fill_data {
+		write "size people: " + length(People);
+		write "size mosquitoes: " + length(Mosquitoes);
+		write "size bs: " + length(BreedingSites);
+		
+		/*if fill_data {
 			write "[!] Fill Data in Start Scenario...";	
 			do update_start_scenario;
-		}
+		}*/
 	}
 	
 //	action load_blocks_to_nebulize {
@@ -595,6 +648,7 @@ global {
 	// ----------------------------------------------------------
 	init {
 		seed <- simulation_seed;
+		//execution_id <- rnd(1, 1e9);
 		
 		// End the simulation if no map was provided
 		if !file_exists(node_filename) or !file_exists(road_filename) {
@@ -642,8 +696,14 @@ global {
 		}
 		
 		write "[!] Model is Loaded...";
-		//write "Seed: " + seed;
+		write "Seed: " + seed;
+	
 		simulation_seed <- seed;
+		
+		
+		write "Vaccination mode? " + vaccination_mode;
+		int n_vaccinated <- People count ((each.vaccinated) and vaccination_mode);
+		write 'Number of vaccinated: ' + n_vaccinated;
 	}
 }
 
@@ -666,7 +726,7 @@ species Eggs {
 			}
 			breeding_site.eggs <- breeding_site.eggs - 1;
 			new_mosquitoes <- new_mosquitoes + 1;
-			write "new mosquito!";
+			//write "new mosquito!";
 			do die;
 		}
 	}
@@ -711,7 +771,7 @@ species BreedingSites {
 	}
 	
 	aspect default {
-		draw square(15) color: #black;
+		draw square(15) color: #blue;
 	}		
 }
 
@@ -731,11 +791,13 @@ species People skills: [moving]{
 	// (SIR) Current state (susceptible = 0, infected = 1 or recovered = 2)
 	int state <- 0;
 	bool start_infected <- false;
+	bool vaccinated <- false;
 	
 	init {
 		if id = -1 {
 			id <- cnt_people;
 			cnt_people <- cnt_people + 1;
+			vaccinated <- flip(prop_vaccinated);
 		}
 	}
 	
@@ -764,11 +826,15 @@ species People skills: [moving]{
 	// Reflex to change the state of the agent to infected
 	reflex change_to_infected_state when: state = 0 {
 		float proba <- 1 - (1 - mosquitoes_daily_rate_of_bites * mosquitoes_susceptibility_to_dengue);
+		if self.vaccinated and vaccination_mode {
+			proba <- proba * (1 - vaccine_efficacy);
+			//write "Person vaccinated, prob of infection: " + proba;
+		}
 		ask Mosquitoes at_distance(1 #m) {
 			// Check the mosquitoes state
 			if state = 2 and flip(proba){
-				write "human infected!";
 				myself.state <- 1;
+				//write "infected person";
 			}
 		}
 	}
@@ -792,8 +858,7 @@ species People skills: [moving]{
 		}		
 	}
 	
-	aspect infected {
-		
+	aspect infected {		
 		if state = 0 {
 			draw circle(5) color: #orange;
 		} else if state = 1 {
@@ -829,6 +894,7 @@ species Mosquitoes skills: [moving] {
 			cnt_mosquitoes <- cnt_mosquitoes + 1;
 		}
 	}
+	
 
 	// Reflex to stay in current location or select a random destination
 	reflex random_move	when: (target = nil) and (flip(mosquitoes_move_probability)) {
@@ -863,15 +929,21 @@ species Mosquitoes skills: [moving] {
 	}
 	
 	reflex die when: flip(mosquitoes_death_rate) {
+		dead_mosquitoes <- dead_mosquitoes + 1;
 		do die;
 	}
 	
 	// Reflex to generate a new offspring
 	reflex oviposition when: flip(mosquitoes_oviposition_rate){
-		BreedingSites potential_bs <- BreedingSites at_distance(1 #m) closest_to(self);
+		BreedingSites potential_bs <- BreedingSites at_distance(min_distance_to_oviposition #m) closest_to(self);
 		if potential_bs != nil {
-			//potential_bs.new_eggs <- rnd(1, mosquitoes_max_carrying_capacity);
-			potential_bs.new_eggs <- 1;
+			potential_bs.new_eggs <- rnd(1, mosquitoes_max_carrying_capacity);
+//			potential_bs.new_eggs <- 1;
+			bs_close <- bs_close + 1;
+//			write "bs close";
+		}
+		else{
+			no_bs_close <- no_bs_close +  1;
 		}
 	}
 	
@@ -1047,31 +1119,30 @@ species Saver skills: [SQLSKILL] {
 			scenario_id <- int(simulation_id[1]) + 1;
 		}
 		
-		string prefix <- "(" + string(execution_id) + ", " + string(scenario_id) + ", " + string(start_from_cycle + cycle);
+		let new_infected_people <- People count ((each.state = 1) and (each.start_infected = false));
 		
-		string query_people <- "INSERT INTO metrics_infected_people(execution_id, simulation_id, cycle, id, event_date, living_place) VALUES";
-		
-		int cnt <- 1;
-		int nb <- People count ((each.state = 1) and (each.start_infected = false));
-		
-		write "[SAVE]-> " + string(execution_id) + " - " + string(scenario_id) + " - " + string(start_from_cycle + cycle) + " => " + string(nb);
-		
-		ask People {
-			if self.state = 1 and self.start_infected = false {
-				query_people <- query_people + prefix + "," + string(self.id) + 
-					",'" + string(current_date) + "'," + string(self.living_place.id) + ")";
-				
-				if cnt < nb {
-					query_people <- query_people + ", ";
-				} else {
-					query_people <- query_people + "; ";
+		if (new_infected_people > 0) {
+			string query_people <- "INSERT INTO metrics_infected_people(execution_id, simulation_id, cycle, id, event_date, living_place) VALUES";
+			int cnt <- 0;
+			
+			write "[SAVE]-> " + string(execution_id) + " - " + string(scenario_id) + " - " + string(start_from_cycle + cycle) + " => " + string(new_infected_people);
+			
+			ask People {
+				if self.state = 1 and self.start_infected = false {
+					cnt <- cnt + 1;
+					query_people <- query_people + "(" + string(execution_id) + ", " + string(scenario_id) + ", " + string(start_from_cycle + cycle) +
+						", " + string(self.id) + ", '" + string(current_date) + "', " + string(self.living_place.id) + ")";
+					
+					if cnt < new_infected_people {
+						query_people <- query_people + ", ";
+					}
+					self.start_infected <- true;				
 				}
-				cnt <- cnt + 1;
-				self.start_infected <- true;				
 			}
-		}
-		
-		if (cnt > 1) {
+			
+			query_people <- query_people + ";";
+			//write query_people; 
+			
 			do executeUpdate(
 				params: POSTGRES,
 				updateComm: query_people
@@ -1112,6 +1183,7 @@ species Saver skills: [SQLSKILL] {
 			updateComm: query_metrics
 		);
 		
+		
 	}
 	
 	reflex save_mosquitoes_metrics when: save_states and run_batch{
@@ -1120,7 +1192,7 @@ species Saver skills: [SQLSKILL] {
 			scenario_id <- int(simulation_id[1]) + 1;
 		}
 		
-		int previous_mosquitoes <- length(Mosquitoes) - new_mosquitoes;
+		int previous_mosquitoes <- length(Mosquitoes);
 
 		int infected_mosquitoes <- Mosquitoes count((each.state = 1) or (each.state = 2));
 		
@@ -1128,13 +1200,34 @@ species Saver skills: [SQLSKILL] {
 						"(" + string(execution_id) + ", " + string(scenario_id) + ", " + string(start_from_cycle + cycle) + "," + new_mosquitoes + 
 						",'" + string(current_date) + "'," + previous_mosquitoes + "," + infected_mosquitoes + ")";
 		
+
 		write "[SAVE MOSQUITOES]-> " + string(execution_id) + " - " + string(scenario_id) + " - " + string(start_from_cycle + cycle) + " => " + string(new_mosquitoes) + "," + previous_mosquitoes + "," + infected_mosquitoes;				
 
 		
 		do executeUpdate(
 			params: POSTGRES,
 			updateComm: query
-		);		
+		);	
+	}
+
+	reflex save_results when: cycle = max_cycles - 1 {
+		write "saving results exec " + execution_id;
+		
+	    save [
+	    	execution_id,
+	        mosquitoes_oviposition_rate,
+	        mosquitoes_death_rate,
+	        bs_eggs_to_mosquitoes,
+	        bs_aquatic_phase_mortality_rate,
+	        mosquitoes_max_carrying_capacity,
+	        mosquitoes_t0,
+	        mosquitoes_t1,
+	        mosquito_growth_rate,
+	        mosquito_regime
+	    ]
+	    to: output_dir + "/mosquitoes_analysis/run_" + execution_id + ".csv"
+	    format: csv
+	    header: true;
 	}
 }
 
@@ -1148,7 +1241,7 @@ experiment dengue_propagation type: gui until: (cycle >= max_cycles and end_simu
 	parameter "Start Date" var: start_date_str category: "string" init: "2017-01-09";
 	parameter "Max cycles" var: max_cycles category: "int" init: 60;
 	parameter "Execution id" var: execution_id category: "int" init: 1;
-//	parameter "Shapefile:" var: default_shp_dir category: "string" init: "/home/carlos/Documentos/dengue-cbrp-framework/includes/ALTO SANTO_500";
+	parameter "Shapefile:" var: default_shp_dir category: "string" init: "/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/src/includes/Guaratiba_0";
 	//
 	parameter "Number of outbreak agents" var: nb_breeding_sites category: "int";
 	parameter "Number of people agents" var: nb_people category: "int";
@@ -1156,38 +1249,54 @@ experiment dengue_propagation type: gui until: (cycle >= max_cycles and end_simu
 	parameter "Number of mosquitoes agents" var: nb_mosquitoes category: "int";
 	parameter "Number of infected mosquitoes agents" var: nb_infected_mosquitoes category: "int";
 	//
-	parameter "Mosquitoes move probability" var: mosquitoes_move_probability category: "float" init: 0.5;
 	parameter "Maximum radius" var: max_move_radius category: "int" init: 100#m;
-	//
+	
 	parameter "Start from data" var: use_initial_scenario category: "bool" init: false;
 	parameter "Execution number" var: start_from_execution_id category: "int" init: 1;
 	parameter "Scenario number" var: start_from_scenario category: "int" init: 0;
 	parameter "Cycle number" var: start_from_cycle category: "int" init: 0;
 	parameter "Save" var: save_states category: "bool" init: false;
 	//
-	parameter "Simulation seed" var:simulation_seed category:"float";
+	parameter "Simulation seed" var:simulation_seed category:"float" init: 0.58789632;
 	parameter "Kill random mosquitoes" var: kill_mosquitoes category: "bool" init: false;
 	parameter "Number of blocks to kill mosquitoes" var: nb_blocks_to_kill category: "int";
 	
+	parameter "Mosquitoes move probability" var: mosquitoes_move_probability category: "float" init: 0.8;
+	parameter "Mosquitoes oviposition" var: mosquitoes_oviposition_rate category: "float" init: 0.4;
+	parameter "Mosquitoes death rate" var: mosquitoes_death_rate category: "float" init: 0.001;
+	parameter "Mosquito daily mortality rate in aquatic phase" var:bs_aquatic_phase_mortality_rate category: "float" init: 0.01;
+	parameter "Egg daily probability of turning into mosquito" var:bs_eggs_to_mosquitoes category: "float" init: 1.0;
+	parameter "Mosquito carrying capacity" var:mosquitoes_max_carrying_capacity category: "float" init: 5.0;
+	parameter "Distance from bs to oviposition" var:min_distance_to_oviposition category: "float" init: 50;
+	parameter "Proportion of vaccinated people" var:prop_vaccinated category:"float";
+	parameter "Vaccination mode" var:vaccination_mode category:"float";
+	
 	output {
+		display city type: opengl {
+			species People;
+			species Mosquitoes;
+			species BreedingSites;
+			species Roads;
+			species Vertices;
+			species Buildings transparency: 0.7;
+		}
 //		display Charts refresh: cycle < 60 axes: true {		
 //			chart "Humans" type: series background: #white position: {0,0} style: exploded x_label: "Days" {
 //				data "Infected" value: People count (each.state = 1) color: #red;
 //				data "Recovered" value: People count (each.state = 2) color: #green;
 //			}
 //		}
-		display city type: opengl {
-			species People aspect:default;
-			species Mosquitoes aspect:default;
-			species BreedingSites;
-			species Roads;
-			species Vertices;
-			//species Buildings transparency: 0.7;
-		}
+		display Charts refresh: cycle < max_cycles axes: true {		
+			chart "Mosquitoes population" type: series background: #white position: {0,0} style: exploded x_label: "Days" {
+				data "Total mosquitoes" value: length(Mosquitoes)  color: #blue;
+				data "New mosquitoes" value: new_mosquitoes_series[cycle] color: #green;
+				data "Dead mosquitoes" value: dead_mosquitoes_series[cycle] color: #red;
+			}
+		}		
 	}
 }
 
-experiment long_headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 50{
+experiment long_headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 20  parallel: true {
 	//
 	parameter "Type of execution" var: run_batch category: "bool" init: true;
 	parameter "Start Date" var: start_date_str category: "string" init: "2020-05-08";
@@ -1218,6 +1327,10 @@ experiment long_headless_dengue_propagation type: batch keep_seed: true until: (
 	parameter "Simulation seed" var:simulation_seed category:"float" init:0.0;
 	parameter "Kill random mosquitoes" var: kill_mosquitoes category: "bool" init: false;
 	parameter "Number of blocks to kill mosquitoes" var: nb_blocks_to_kill category: "int";
+	
+	parameter "Proportion of vaccinated people" var:prop_vaccinated category:"float";
+	parameter "Vaccination mode" var:vaccination_mode category:"bool";
+	parameter "Vaccination efficacy" var:vaccine_efficacy category:"float";
 }
 
 experiment short_headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 20 {
@@ -1238,7 +1351,6 @@ experiment short_headless_dengue_propagation type: batch keep_seed: true until: 
 	parameter "Maximum radius" var: max_move_radius category: "int" init: 100#m;
 	//
 	parameter "Start from data" var: use_initial_scenario category: "bool" init: true;
-	parameter "Execution number" var: start_from_execution_id category: "int" init: 1;
 	parameter "Scenario number" var: start_from_scenario category: "int" init: 1;
 	parameter "Cycle number" var: start_from_cycle category: "int" init: 0;
 	parameter "Save" var: save_states category: "bool" init: false;
@@ -1254,3 +1366,27 @@ experiment short_headless_dengue_propagation type: batch keep_seed: true until: 
 }
 
 
+experiment mosquito_population_dynamics type: batch repeat: 10 until: cycle >= max_cycles {
+
+    parameter "Mosquitoes oviposition" 
+        var: mosquitoes_oviposition_rate 
+        among: [0.2, 0.3, 0.4, 0.5, 0.6, 1.0];
+
+    parameter "Mosquitoes death rate" 
+        var: mosquitoes_death_rate 
+        among: [0, 0.0001, 0.001, 0.01, 0.1];
+
+    parameter "Egg to mosquito probability" 
+        var: bs_eggs_to_mosquitoes 
+        among: [0, 0.3, 0.5, 0.7, 1.0];
+
+    parameter "Aquatic mortality rate" 
+        var: bs_aquatic_phase_mortality_rate 
+        among: [0, 0.0001, 0.001, 0.01, 0.1];
+
+    parameter "Mosquito carrying capacity" 
+        var: mosquitoes_max_carrying_capacity 
+        among: [1, 3, 5, 10];
+        
+//    parameter "simulation_seed" var: simulation_seed category: "float" init: 0.58789632;
+}
