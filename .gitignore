@@ -132,10 +132,10 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-*.csv
 *.pdf
 temp/*
 simheuristic_runs/*
+.vscode/
 
 
 # Spyder project settings
@@ -171,4 +171,5 @@ cython_debug/
 #.idea/
 
 # Data
-src/includes/
+src/includes/*
+experiments/

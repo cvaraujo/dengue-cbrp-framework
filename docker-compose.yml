@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: dengue-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dengue-propagation
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./simulation/data/script.sql:/docker-entrypoint-initdb.d/01-script.sql:ro
+
+  app:
+    build: .
+    container_name: dengue-app
+    depends_on:
+      - db
+    env_file:
+      - .env
+    environment:
+      PG_HOST: db
+      PG_PORT: 5432
+      PG_USER: postgres
+      PG_PASSWORD: postgres
+      PG_DBNAME: dengue-propagation
+      GAMA_PORT: 6868
+      GAMA_PATH: /opt/gama/GAMA_1.9.2_Linux_with_JDK/headless/gama-headless.sh
+      SIMULATION_PATH: /app/simulation/models/dengue_propagation.gaml
+    ports:
+      - "6868:6868"
+    volumes:
+      - ./results:/app/results
+
+volumes:
+  postgres_data:
