@@ -1,4 +1,8 @@
+import logging
+
 from use_cases.simulation_metrics import *
+
+logging.basicConfig(level=logging.INFO)
 
 class Experiments:
     """
@@ -6,7 +10,7 @@ class Experiments:
     """
 
     def __init__(self, 
-                 output_folder, 
+                 output_folder,
                  city_name, 
                  map_size, 
                  start_date,
@@ -26,7 +30,9 @@ class Experiments:
         self.proportion_infected_mosquitoes_without_cases = proportion_infected_mosquitoes_without_cases
         self.proportion_infected_mosquitoes_with_cases = proportion_infected_mosquitoes_with_cases
         self.max_cycles = max_cycles
-        
+
+        self.simulation_identifier = self.city_name.split(',')[0].strip()
+       
         self.simulation_metrics = SimulationMetrics(output_folder=output_folder,
                                                         city=city_name,
                                                         map_size=map_size,
@@ -90,6 +96,7 @@ class Experiments:
         self.simulation_metrics.plot_multiple_execs(
             output_file,
             len(oviposition_values),
+            range(len(oviposition_values)),
             style_dict,
         )
 
@@ -138,6 +145,7 @@ class Experiments:
         self.simulation_metrics.plot_multiple_execs(
             output_file,
             len(aquatic_mortality_values),
+            range(len(aquatic_mortality_values)),
             style_dict,
         )
 
@@ -180,15 +188,55 @@ class Experiments:
         self.simulation_metrics.plot_multiple_execs(
             output_file,
             len(death_rate_values),
+            range(len(death_rate_values)),
             style_dict,
         )
 
         logger.info("[*] Finished death rate experiment!")    
 
+    def vaccine_experiment(self):
+        vaccine_efficacy = [0.6, 0.7, 0.8, 0.9, 1.0]
+        props_vaccinated = [0, 0.1, 0.3, 0.5, 0.7, 0.9, 1.0]
+        style_dict = [
+                {"name":f"{props_vaccinated[0] * 100}% vacinados", "color":"red", "dash":":"},
+                {"name":f"{props_vaccinated[1] * 100}% vacinados", "color":"green", "dash":"dashed"},
+                {"name":f"{props_vaccinated[2] * 100}% vacinados", "color":"orange", "dash":"dotted"},
+                {"name":f"{props_vaccinated[3] * 100}% vacinados", "color":"blue", "dash":"dashdot"},
+                {"name":f"{props_vaccinated[4] * 100}% vacinados", "color":"brown", "dash":"solid"},
+                {"name":f"{props_vaccinated[5] * 100}% vacinados", "color":"gray", "dash":":"},
+                {"name":f"{props_vaccinated[6] * 100}% vacinados", "color":"pink", "dash":"solid"}
+        ]
 
-    def run_all(self):
+        # logger.info("[*] Clearing data from database...")
+        # sim_metrics.db.clear_database()
+
+        exec_id = 0
+
+        for efficacy in vaccine_efficacy:
+            for prop in props_vaccinated:
+                logger.info("[*] Running vaccine experiment for efficacy {} and proportion of vaccinated people {}...".format(efficacy, prop))
+                additional_params = {
+                    "prop_vaccinated": ("float", prop),
+                    "vaccination_mode": ("bool", True),
+                    "vaccine_efficacy": ("float", efficacy)
+                }
+
+            #     logger.info("[*] Comparing simulated with real cases for date {} and proportion of vaccinated people {}...".format(start_date, prop))
+            #     sim_metrics.compare_simulated_with_real_cases(exec_id=exec_id,clear_db=False, plot=False, additional_params=additional_params)
+
+                exec_id += 1
+            
+            self.simulation_metrics.plot_multiple_execs(
+                self.output_folder + f"vaccination_strategies_{efficacy}",
+                len(props_vaccinated),
+                range(exec_id - len(props_vaccinated), exec_id),
+                style_dict,
+                title=f"Impact of Vaccination on Dengue cases in {self.simulation_identifier} (efficacy of {efficacy*100}%)"
+            )
+
+    def run_all_params_exp(self):
         """
-        Run all experiments sequentially.
+        Run all parameters related experiments sequentially.
         """        
         self.oviposition_experiment()
         self.aquatic_mortality_experiment()

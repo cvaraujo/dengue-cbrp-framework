@@ -33,7 +33,8 @@ class SimulationMetrics:
                  mosquitoes_per_person: float = 1.0,
                  nb_breeding_sites: int = 50,
                  proportion_infected_mosquitoes_without_cases: float = 0.05,
-                 proportion_infected_mosquitoes_with_cases: float = 0.4):
+                 proportion_infected_mosquitoes_with_cases: float = 0.4,
+                 sample_size: float = 1.0):
     
         self.output_folder = output_folder
         self.db = PostgreSQLAdapter()
@@ -46,8 +47,9 @@ class SimulationMetrics:
         self.nb_breeding_sites = nb_breeding_sites
         self.proportion_infected_mosquitoes_without_cases = proportion_infected_mosquitoes_without_cases
         self.proportion_infected_mosquitoes_with_cases = proportion_infected_mosquitoes_with_cases
+        self.sample_size = sample_size
         
-        self.city_key, _ = self._get_city_info(self.city)
+        self.city_key, self.load_from_radius = self._get_city_info(self.city)
         
         (self.shp_path,  
         self.coord_blocks, 
@@ -58,11 +60,11 @@ class SimulationMetrics:
 
     def _get_city_info(self, city: str):
         if city == "Alto Santo, Ceará, Brasil":
-            return "ALTO SANTO", "alto-santo"
+            return "ALTO SANTO", True
         elif city == "Limoeiro do Norte, Ceará, Brasil":
-            return "LIMOEIRO", "limoeiro"
+            return "LIMOEIRO", True
         elif city == "Guaratiba, Rio de Janeiro, Brasil":
-            return "Guaratiba", "guaratiba"
+            return "Guaratiba", False
 
     def _build_shapefile_path(self, city_key: str, map_size: int) -> str:
         path = os.path.abspath(f"./src/includes/{city_key}_{map_size}")
@@ -85,9 +87,52 @@ class SimulationMetrics:
             "save_states": ("bool", save_states),
         }
 
+    def _detect_and_correct_outliers(self, values: list, threshold: float = 0.8) -> tuple:
+        """
+        Detecta outliers em uma série temporal usando mudanças percentuais.
+        Outliers são definidos como mudanças de 70% ou mais em relação à semana anterior.
+        
+        Args:
+            values: Lista de valores (casos por semana)
+            threshold: Limite de mudança percentual para considerar outlier (0.7 = 70%)
+        
+        Returns:
+            Tuple contendo:
+            - corrected_values: Lista com valores ajustados nos outliers
+            - outlier_indices: Índices onde outliers foram detectados
+            - projected_values: Dict com índices -> valores projetados
+        """
+        corrected_values = values.copy()
+        outlier_indices = []
+        projected_values = {}
+        
+        # Começar do índice 1 (não pode verificar primeira semana sem anterior)
+        # Parar antes da última (não há próxima semana para calcular média)
+        for i in range(1, len(values) - 1):
+            prev_value = values[i - 1]
+            current_value = values[i]
+            next_value = values[i + 1]
+            
+            # Calcular mudança percentual
+            if prev_value == 0:
+                # Se valor anterior é 0, considerar outlier apenas em casos extremos
+                is_outlier = current_value > 0 and next_value > 0 and (current_value / next_value > 2 or next_value / current_value > 2)
+            else:
+                change_ratio = abs(current_value - prev_value) / prev_value
+                is_outlier = change_ratio >= threshold
+            
+            if is_outlier:
+                # Calcular valor projetado como média entre anterior e próximo
+                projected_value = (prev_value + next_value) / 2
+                corrected_values[i] = int(round(projected_value))
+                outlier_indices.append(i)
+                projected_values[i] = int(round(projected_value))
+        
+        return corrected_values, outlier_indices, projected_values
+
     def _load_simulation(self):
         logger.info(f"[*] Loading OSM map: {self.city} ({self.map_size})...")
-        osm = OpenStreetMap(self.city, self.map_size, True)
+        osm = OpenStreetMap(self.city, self.city_key, self.map_size, self.load_from_radius)
         graph: Graph = MapAdapter.convert_osm_to_graph(osm, True)
 
         logger.info("[*] Retrieving dengue cases...")
@@ -145,6 +190,7 @@ class SimulationMetrics:
             nb_breeding_sites=self.nb_breeding_sites,
             proportion_infected_mosquitoes_without_cases=self.proportion_infected_mosquitoes_without_cases,
             proportion_infected_mosquitoes_with_cases=self.proportion_infected_mosquitoes_with_cases,
+            sample_size=self.sample_size,  
         )
 
         logger.info("[*] Running batch simulation...")
@@ -197,6 +243,7 @@ class SimulationMetrics:
         df_real = self.db.get_notifications_between_dates(
             self.start_date, max_sim_date, self.city_key
         )
+
         df_real = df_real[
             (df_real["classification"] != 5)
             & df_real.apply(
@@ -221,21 +268,22 @@ class SimulationMetrics:
         metrics = []
 
         # First week represents the start cenários + cases from StartDate (considering approximate two cycles here)
+        sampled_start_infected = int(round(self.starting_num_infected * self.sample_size))
         weeks = [1]
-        avg_y = [self.starting_num_infected]
-        real_y = [self.starting_num_infected]
+        avg_y = [sampled_start_infected]
+        real_y = [sampled_start_infected]
         sim_x = [1]
-        sim_y = [self.starting_num_infected]
-        max_sim_y = [self.starting_num_infected]
-        min_sim_y = [self.starting_num_infected]
+        sim_y = [sampled_start_infected]
+        max_sim_y = [sampled_start_infected]
+        min_sim_y = [sampled_start_infected]
 
         metrics.append(
             {
                 "Date": sim_weeks[0],
-                "Avg": self.starting_num_infected,
-                "Min": self.starting_num_infected,
-                "Max": self.starting_num_infected,
-                "Real": self.starting_num_infected,
+                "Avg": sampled_start_infected,
+                "Min": sampled_start_infected,
+                "Max": sampled_start_infected,
+                "Real": sampled_start_infected,
             }
         )
 
@@ -244,6 +292,8 @@ class SimulationMetrics:
                 "infected"
             ].tolist()
             weekly_real = df_real_grouped.get(week, 0)
+            # Ajustar casos reais para a amostra usada na simulação
+            weekly_real = int(round(weekly_real * self.sample_size))
 
             avg = np.mean(weekly_sim)
             min_sim = np.min(weekly_sim)
@@ -271,20 +321,26 @@ class SimulationMetrics:
         pd.DataFrame(metrics).to_csv(filename + ".csv", sep=",", index=False)
 
         logger.info("[*] Saving statistics...")
-        p_avg = pearsonr(avg_y, real_y)
+        # Detectar e corrigir outliers na curva real para cálculos de métrica
+        real_y_for_metrics, outlier_indices, projected_values = self._detect_and_correct_outliers(real_y)
+        
+        p_avg = pearsonr(avg_y, real_y_for_metrics)
         corr_avg, p_value_avg = p_avg
         ci_avg = p_avg.confidence_interval(confidence_level=0.95)
-        p_max = pearsonr(max_sim_y, real_y)
+        p_max = pearsonr(max_sim_y, real_y_for_metrics)
         corr_max, p_value_max = p_max
         ci_max = p_max.confidence_interval(confidence_level=0.95)
-        mae = mean_absolute_error(real_y, avg_y)
+        mae = mean_absolute_error(real_y_for_metrics, avg_y)
         in_endemic_chan = sum(
             [
                 1
-                for i in range(len(real_y))
-                if real_y[i] <= max_sim_y[i] and real_y[i] >= min_sim_y[i]
+                for i in range(len(real_y_for_metrics))
+                if real_y_for_metrics[i] <= max_sim_y[i] and real_y_for_metrics[i] >= min_sim_y[i]
             ]
         )
+
+        sum_avg_simulated = round(sum(avg_y))
+        sum_real = sum(real_y_for_metrics)
 
         # Create a DataFrame with metrics
         df_metrics = pd.DataFrame(
@@ -300,6 +356,8 @@ class SimulationMetrics:
                     "P-Value Max",
                     "MAE",
                     "Inside Endemic Channel",
+                    "Sum Avg Simulated",
+                    "Sum Real"
                 ],
                 "Value": [
                     corr_avg,
@@ -312,6 +370,8 @@ class SimulationMetrics:
                     p_value_max,
                     mae,
                     in_endemic_chan,
+                    sum_avg_simulated,
+                    sum_real
                 ],
             }
         )
@@ -322,11 +382,20 @@ class SimulationMetrics:
         logger.info("[*] Saving figure as PDF...")
         plt.figure(figsize=(10, 6))
         plt.plot(weeks, real_y, label="Real Cases", marker="o", linestyle="-", color="#36454F")
+        
+        # Plotar pontos projetados para outliers detectados
+        if projected_values:
+            proj_weeks = [weeks[idx] for idx in projected_values.keys()]
+            proj_values = [projected_values[idx] for idx in projected_values.keys()]
+            plt.scatter(proj_weeks, proj_values, label="Projected Cases (Outlier Correction)", 
+                       marker="s", color="#36454F", s=100, alpha=0.6, edgecolors='black', linewidth=1.5)
+        
         plt.plot(weeks, avg_y, label="Avg Simulated Cases", linestyle="--", color="#808080")
         plt.scatter(sim_x, sim_y, label="Simulated Cases", marker="x", color="#B2BEB5")
 
         plt.xlabel("Weeks")
         plt.ylabel("Number of Notifications")
+        plt.title(f"Epidemic Curve for {self.city_key} (starting from {self.start_date})")
         plt.grid(True)
         plt.xticks(weeks)
         plt.legend()  # Show the labels in the figure
@@ -340,7 +409,9 @@ class SimulationMetrics:
         self,
         filename: str,
         n_execs: int,
+        execs_ids: list,
         style: dict,
+        title:str = ""
     ):
 
         all_weeks = []
@@ -373,7 +444,7 @@ class SimulationMetrics:
             freq='W-SUN'  
         ).strftime("%Y-%m-%d").tolist()
 
-        for i in range(n_execs):
+        for i in execs_ids:
             logger.info(f"[*] Extracting and Processing simulated cases for execution {i}...")
     
             df_sim = self.db.query(
@@ -430,8 +501,11 @@ class SimulationMetrics:
             all_avg_y.append(avg_y)
 
         logger.info("[*] Processing real notifications to plot...")
+        
+        start_datetime = datetime.strptime(self.start_date, "%Y-%m-%d")
+        prev_date = start_datetime - timedelta(days=6)
         df_real = self.db.get_notifications_between_dates(
-            self.start_date, max_sim_date, self.city_key
+            prev_date.strftime("%Y-%m-%d"), max_sim_date, self.city_key
         )
         df_real = df_real[
             (df_real["classification"] != 5)
@@ -443,6 +517,7 @@ class SimulationMetrics:
             )
         ][["data_notification"]]
 
+
         df_real["data_notification"] = pd.to_datetime(df_real["data_notification"])
         df_real["week_str"] = df_real["data_notification"].apply(
             lambda d: Utils.last_day_of_week(d).strftime("%Y-%m-%d")
@@ -450,18 +525,63 @@ class SimulationMetrics:
         df_real_grouped = df_real.groupby("week_str").size().to_dict()
         sim_weeks = sorted(all_weeks_full)
 
-        real_y = [self.starting_num_infected]
-        for i, week in enumerate(sim_weeks[1:], start=2):
-            weekly_real = df_real_grouped.get(week, 0)
-            real_y.append(weekly_real)
+        # sampled_start_infected = int(round(self.starting_num_infected * self.sample_size))
+        # real_y = [sampled_start_infected]
+        # for i, week in enumerate(sim_weeks[1:], start=2):
+        #     weekly_real = df_real_grouped.get(week, 0)
+        #     real_y.append(int(round(weekly_real * self.sample_size)))
+
+        cases_column: dict = {"Real Cases": ([int(round(df_real_grouped.get(week_str, 0) * self.sample_size)) 
+                                            for week_str in all_weeks_full])} 
+        cases_column.update({style[i]["name"]: [] for i in range(n_execs)})
+
+        cases_column["Real Cases"].append("")  # Placeholder para a última linha de redução acumulada
+
+        for i in range(n_execs):
+            week_column = []
+            real_sum = 0
+            avg_sum = 0
+
+            for week_index in range(len(all_weeks_full)):
+                week_column.append(week_index + 1)
+
+                if not len(all_avg_y[i]) or not len(all_avg_y[i]) > week_index:
+                    continue
+
+                real_count = cases_column["Real Cases"][week_index]                
+                avg = all_avg_y[i][week_index]
+
+                if week_index > 0: # Todos tem a mesma qtd de casos na 1a semana
+                    real_sum += real_count
+                    avg_sum += avg
+
+                cases_column[style[i]["name"]].append(int(avg))
+
+            if not len(cases_column[style[i]["name"]]) == len(all_weeks_full):
+                missing_count = len(all_weeks_full) - len(cases_column[style[i]["name"]])
+                for _ in range(missing_count):
+                    cases_column[style[i]["name"]].append(0)
+
+            reduct_accum = (((real_sum - avg_sum) / real_sum) * 100) if real_sum > 0 else 100
+            cases_column[style[i]["name"]].append(f"{reduct_accum:.2f}%")
+        
+        week_column.append("Redução Acumulada (%)")  
+
+        print(cases_column)
+        print(week_column)
+
+
+        df_reduction = pd.DataFrame({"Semana": week_column, **cases_column})
+        df_reduction.to_csv(filename + "_reduction.csv", index=False)
 
         logger.info("[*] Saving figure as PDF...")
         plt.figure(figsize=(10, 6))
         for i in range(n_execs):
             plt.plot(all_weeks[i], all_avg_y[i], label=style[i]["name"], color=style[i]["color"], linestyle=style[i]["dash"])
 
-        plt.plot(all_weeks[0], real_y, label="Real Cases", marker="o", linestyle="-", color="#36454F")
-
+        # plt.plot(all_weeks[0], real_y, label="Real Cases", marker="o", linestyle="-", color="#36454F")
+            
+        plt.title(title)
         plt.xlabel("Weeks")
         plt.ylabel("Number of Notifications")
         plt.grid(True)

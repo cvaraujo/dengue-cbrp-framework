@@ -75,7 +75,8 @@ def get_populational_parameters(city:str):
 
     elif city == "Limoeiro do Norte, Ceará, Brasil":
         return 0.004, 1.0, 500, 0.2, 0.9
-
+    elif city == "Guaratiba, Rio de Janeiro, Brasil":
+        return 0.0014, 1.0, 50, 0.05, 0.2
     else:
         return 0.001, 1.0, 50, 0.1, 0.5
 
@@ -119,15 +120,57 @@ def run_parameters_experiment():
     #experiments.run_all()
     experiments.oviposition_experiment()
 
-# python3 src/main.py simheuristic_runs/AS-20170108/ 2017-01-01 2017-01-08
-def run_comparison_real_simulated():
-    output_folder: str = "/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/experiments/Guaratiba-2024-01-28/"
-    # output_folder: str = sys.argv[1]
+def run_vaccination_experiment():
+    city: str = "Guaratiba, Rio de Janeiro, Brasil"
+    map_size: int = 0
+    start_date: str = "2024-01-28"
+
+    (people_per_m2, 
+    mosquitoes_per_person, 
+    nb_breeding_sites, 
+    proportion_infected_mosquitoes_without_cases, 
+    proportion_infected_mosquitoes_with_cases) = get_populational_parameters(city)        
+
+    simulation_identifier = city.split(',')[0].strip()
+    output_folder: str = f"/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/experiments/vaccination/{simulation_identifier}-{map_size}-{start_date}/"
     os.makedirs(output_folder, exist_ok=True)
+
+    logger.info(f"[*] Output folder: {output_folder}")
+
+
+    sim_metrics: SimulationMetrics = SimulationMetrics(output_folder=output_folder,
+                                                        city=city,
+                                                        max_cycles=180,
+                                                        map_size=map_size,
+                                                        start_date=start_date,
+                                                        people_per_m2=people_per_m2,
+                                                        mosquitoes_per_person=mosquitoes_per_person,
+                                                        nb_breeding_sites=nb_breeding_sites,
+                                                        proportion_infected_mosquitoes_without_cases=proportion_infected_mosquitoes_without_cases,
+                                                        proportion_infected_mosquitoes_with_cases=proportion_infected_mosquitoes_with_cases)
     
+    experiments = Experiments(output_folder, 
+                              city, 
+                              map_size, 
+                              start_date, 
+                              people_per_m2, 
+                              mosquitoes_per_person, 
+                              nb_breeding_sites, 
+                              proportion_infected_mosquitoes_without_cases, 
+                              proportion_infected_mosquitoes_with_cases,
+                              max_cycles=180)    
+    
+    logger.info("[*] Running vaccine experiment...")    
+    experiments.vaccine_experiment()
+    
+    
+
+# python3 src/main.py simheuristic_runs/AS-20170108/ 2017-01-01 2017-01-08
+def run_comparison_real_simulated():    
     # city: str = "Limoeiro do Norte, Ceará, Brasil"
     # city: str = "Alto Santo, Ceará, Brasil"
     city: str = "Guaratiba, Rio de Janeiro, Brasil"
+    # map_size: int = 2000
     map_size: int = 0
     # logger.info(f"[*] Loading OSM map: {city} ({map_size})...")
     # osm: OpenStreetMap = OpenStreetMap(city, map_size)
@@ -137,7 +180,11 @@ def run_comparison_real_simulated():
 
     # logger.info("[*] Retrieving dengue cases...")
     # start_date: str = "2017-01-15"
-    start_date: str = "2024-01-28"
+    start_dates = []
+    start_dates.append("2024-01-28")
+    # start_dates.append("2020-07-19")
+    sample_size = 1.0
+
     # city_key: str = "LIMOEIRO"
     # start_datetime = datetime.strptime(start_date, "%Y-%m-%d")
 
@@ -159,22 +206,28 @@ def run_comparison_real_simulated():
     # logger.info(f"Infected Real: {infected}")
     # osm.plot_map_with_cases(infected, f"{output_folder}/osm_map_real_cases.png")
 
-    sim_metrics: SimulationMetrics = SimulationMetrics(output_folder=output_folder,
-                                                       city=city,
-                                                       max_cycles=90,
-                                                        map_size=map_size,
-                                                        start_date=start_date,
-                                                        people_per_m2=people_per_m2,
-                                                        mosquitoes_per_person=mosquitoes_per_person,
-                                                        nb_breeding_sites=nb_breeding_sites,
-                                                        proportion_infected_mosquitoes_without_cases=proportion_infected_mosquitoes_without_cases,
-                                                        proportion_infected_mosquitoes_with_cases=proportion_infected_mosquitoes_with_cases,)
-    
-    logger.info("[*] Comparing simulated with real cases...")
-    # sim_metrics.compare_simulated_with_real_cases(exec_id=1,clear_db=True, plot=True)
-    sim_metrics.plot_min_max_avg_real(exec_id=1)
+    for i, start_date in enumerate(start_dates):
+        simulation_identifier = city.split(',')[0].strip()
+        output_folder: str = f"/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/experiments/{simulation_identifier}-{map_size}-{start_date}-{sample_size}sample/"
+        os.makedirs(output_folder, exist_ok=True)
 
-    # logger.info("[*] Processing simulated cases...")
+        sim_metrics: SimulationMetrics = SimulationMetrics(output_folder=output_folder,
+                                                            city=city,
+                                                            max_cycles=180,
+                                                            map_size=map_size,
+                                                            start_date=start_date,
+                                                            people_per_m2=people_per_m2,
+                                                            mosquitoes_per_person=mosquitoes_per_person,
+                                                            nb_breeding_sites=nb_breeding_sites,
+                                                            proportion_infected_mosquitoes_without_cases=proportion_infected_mosquitoes_without_cases,
+                                                            proportion_infected_mosquitoes_with_cases=proportion_infected_mosquitoes_with_cases,
+                                                            sample_size=sample_size)
+
+        logger.info("[*] Comparing simulated with real cases for date {}...".format(start_date))
+        sim_metrics.compare_simulated_with_real_cases(exec_id=i,clear_db=True, plot=False)
+        sim_metrics.plot_min_max_avg_real(exec_id=i)
+
+    # logger.info("[*] Processing simulated cases...")r
     # df_sim = db.query(
     #     f"""
     #     SELECT simulation_id, living_place, count(id) as infected_people
@@ -234,4 +287,5 @@ def run_comparison_real_simulated():
 
 
 # run_parameters_experiment()
-run_comparison_real_simulated()
+# run_comparison_real_simulated()
+run_vaccination_experiment()

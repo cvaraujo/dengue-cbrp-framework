@@ -1,3 +1,5 @@
+from pathlib import Path
+from turtle import st
 import osmnx as ox
 import matplotlib.pyplot as plt
 # import contextily as ctx
@@ -14,21 +16,50 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 ox.settings.log_console = False
 
 class OpenStreetMap:
-    def __init__(self, query: str, radius: int = 0, from_place: bool = False):
+    def __init__(self, query: str, city_key: str, radius: int = 0, load_from_radius: bool = False):
         self.query: str = query
+        self.city_key: str = city_key
         self.radius: int = radius
         self.osm_map = None
-        self.lat: float = 0.0
-        self.lon: float = 0.0
 
         try:
-            if from_place:
-                self.osm_map = ox.graph_from_place(query, network_type="drive", simplify=True)
-            else:
-                self.osm_map = ox.graph_from_address(query, radius, simplify=True)
+            if not self.check_map_exists():
+                if load_from_radius:
+                    print("Using radius to load map...")
+                    self.osm_map = ox.graph_from_address(query, radius, simplify=True)
+                else:
+                    print("Ignoring radius and loading map from place name...")
+                    self.osm_map = ox.graph_from_place(query, network_type="drive", simplify=True)
         except Exception as e:
             print(f"Error to load the map: {e}")
+            raise
+    
+    def check_map_exists(self) -> bool:
+        folder_name = f"{self.city_key}_{self.radius}"
+        local_shp_folder = Path("./src/includes") / folder_name
+        edges_shp = local_shp_folder / "edges.shp"
+        nodes_shp = local_shp_folder / "nodes.shp"
+        
+        if edges_shp.exists() and nodes_shp.exists():
+            print(f"Found local shapefiles for map: {local_shp_folder}")
+            try:
+                # Carregar nodes e edges dos shapefiles
+                nodes_gdf = gpd.read_file(nodes_shp)
+                edges_gdf = gpd.read_file(edges_shp)
 
+                nodes_gdf = nodes_gdf.set_index('osmid') if 'osmid' in nodes_gdf.columns else nodes_gdf
+                edges_gdf = edges_gdf.set_index(['u', 'v', 'key']) if all(col in edges_gdf.columns for col in ['u', 'v', 'key']) else edges_gdf
+        
+                
+                self.osm_map = ox.graph_from_gdfs(nodes_gdf, edges_gdf)
+                print(f"Map loaded from local files: {local_shp_folder}")
+                return True
+            except Exception as e:
+                print(f"Error loading local shapefiles: {e}")
+                raise
+        
+        return False
+        
     def plot_map(self, show: bool = True, save_path: str = None, **kwargs):
         if self.osm_map is not None:
             nodes, edges = ox.graph_to_gdfs(self.osm_map)

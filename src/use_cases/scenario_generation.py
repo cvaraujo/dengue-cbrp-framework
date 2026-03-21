@@ -88,6 +88,7 @@ class ScenarioGeneration:
         nb_breeding_sites: int,
         proportion_infected_mosquitoes_without_cases: float,
         proportion_infected_mosquitoes_with_cases: float,
+        sample_size: float,
     ):
         people_records = []
         mosquitoes_records = []
@@ -95,13 +96,20 @@ class ScenarioGeneration:
         id_people = 0
         id_breeding_sites = 0
         id_mosquitoes = 0
+        total_infected_mosquitoes = 0
+        total_infected_people = 0
 
         for block, people_count in enumerate(people_per_block):
+            # Aplicar sample_size aos números de pessoas
+            sampled_people_count = people_count * sample_size
+            sampled_infected = infected_people_per_block[block] * sample_size
+            sampled_recovered = recovered_people_per_block[block] * sample_size
+
             health_people = max(
                 0,
-                people_count
-                - infected_people_per_block[block]
-                - recovered_people_per_block[block],
+                sampled_people_count
+                - sampled_infected
+                - sampled_recovered,
             )
 
             for _ in range(int(health_people)):
@@ -110,7 +118,9 @@ class ScenarioGeneration:
                 )
                 id_people += 1
 
-            nb_infected_people = min(infected_people_per_block[block], people_count)
+            nb_infected_people = min(sampled_infected, sampled_people_count)
+            total_infected_people += nb_infected_people
+
             for _ in range(int(nb_infected_people)):
                 people_records.append(
                     self._get_default_people_to_query(id_people, block, 1)
@@ -134,6 +144,8 @@ class ScenarioGeneration:
                 else proportion_infected_mosquitoes_without_cases
             )
             nb_infected_mosquitoes = math.ceil(nb_mosquitoes * proportion)
+
+            total_infected_mosquitoes += nb_infected_mosquitoes
 
             for _ in range(nb_infected_mosquitoes):
                 mosquitoes_records.append(
@@ -167,7 +179,11 @@ class ScenarioGeneration:
             id_breeding_sites += 1
 
         logging.info(
-            f"[*] Starting Size of Populations: People: {len(people_records)}, BS: {len(breeding_sites_records)}, Mosquitoes: {len(mosquitoes_records)}..."
+            f"[*] Starting Size of Populations: People: {len(people_records)}, "
+                f"BS: {len(breeding_sites_records)},"
+                f"Mosquitoes: {len(mosquitoes_records)}, "
+                f"Infected mosquitoes: {total_infected_mosquitoes}"
+                f" Infected people: {total_infected_people}"
         )
         logging.info("[*] Executing queries...")
 
