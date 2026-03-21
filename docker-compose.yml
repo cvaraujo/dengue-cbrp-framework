@@ -14,6 +14,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./simulation/data/script.sql:/docker-entrypoint-initdb.d/01-script.sql:ro
+      - ./simulation/data/cases_dump.csv:/docker-entrypoint-initdb.d/cases_dump.csv:ro
 
   app:
     build: .

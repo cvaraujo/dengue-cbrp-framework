@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     wget \
     ca-certificates \
-    openjdk-17-jre \
+    default-jre \
     procps \
     iproute2 \
     gcc \
@@ -36,6 +36,11 @@ RUN mkdir -p /opt/gama && \
 
 # Ajusta permissões
 RUN chmod +x /opt/gama/GAMA_1.9.2_Linux_with_JDK/headless/gama-headless.sh
+
+# Increase GAMA JVM memory to 144GB for large experiments
+RUN sed -i 's/-Xms8192m/-Xms144g/g' /opt/gama/GAMA_1.9.2_Linux_with_JDK/Gama.ini && \
+    sed -i 's/-Xmx8192m/-Xmx144g/g' /opt/gama/GAMA_1.9.2_Linux_with_JDK/Gama.ini && \
+    sed -i 's/-Xms8192m/-Xms144g/g' /opt/gama/GAMA_1.9.2_Linux_with_JDK/headless/gama-headless.sh
 
 # Script de inicialização
 COPY docker-entrypoint.sh /docker-entrypoint.sh

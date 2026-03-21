@@ -19,7 +19,7 @@ class PostgreSQLAdapter:
         port=os.getenv("PG-PORT", 5432),
         dbname=os.getenv("PG-DBNAME", "dengue-propagation"),
         user=os.getenv("PG-USER", "postgres"),
-        password=os.getenv("PG-PASS"),
+        password=os.getenv("PG-PASSWORD"),
     ):
         self.database_url = (
             f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{dbname}"

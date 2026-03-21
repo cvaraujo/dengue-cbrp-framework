@@ -1,5 +1,3 @@
-from pathlib import Path
-from turtle import st
 import osmnx as ox
 import matplotlib.pyplot as plt
 # import contextily as ctx
