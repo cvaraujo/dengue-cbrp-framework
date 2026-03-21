@@ -437,7 +437,7 @@ class SimulationMetrics:
             (df_real["classification"] != 5)
             & df_real.apply(
                 lambda row: any(
-                    poly.contains(Point(row["y"], row["x"])) for poly in self.coord_blocks
+                    poly.contains(Point(row["x"], row["y"])) for poly in self.coord_blocks
                 ),
                 axis=1,
             )
@@ -627,7 +627,7 @@ class SimulationMetrics:
             (df_real_cases["classification"] != 5)
             & df_real_cases.apply(
                 lambda row: any(
-                    poly.contains(Point(row["y"], row["x"])) for poly in coord_blocks
+                    poly.contains(Point(row["x"], row["y"])) for poly in coord_blocks
                 ),
                 axis=1,
             )

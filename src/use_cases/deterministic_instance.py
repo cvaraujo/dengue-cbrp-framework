@@ -1,6 +1,7 @@
 import os
 from typing import List
 import pandas as pd
+from shapely import Point
 from adapters.sql.postgree import PostgreSQLAdapter
 from domain.graph import Graph
 from adapters.sql import *
@@ -16,9 +17,10 @@ class DeterministicInstance:
         infected_per_block = [0] * self._graph.b
 
         for _, row in filtered_df.iterrows():
-            y, x = float(row["y"]), float(row["x"])
+            lat, long = float(row["y"]), float(row["x"])
+            point = Point(long, lat)
             for i, polygon in enumerate(coord_blocks):
-                if Utils.point_in_polygon((y, x), polygon):
+                if Utils.point_in_polygon((point), polygon):
                     infected_per_block[i] += 1
                     break
 

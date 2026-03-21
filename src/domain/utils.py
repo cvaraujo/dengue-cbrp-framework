@@ -369,7 +369,7 @@ def get_infected_recovered_people_per_block(
         graph: Graph with attribute `b` = number of blocks.
         start_date (datetime.date): Start date of simulation.
         coord_blocks (list): List of polygons (each block).
-        point_in_polygon (func): Function to check if point (y, x) is in polygon.
+        point_in_polygon (func): Function to check if point (x, y) [(long, lat)] is in polygon.
 
     Returns:
         Tuple of two np.arrays: infected_people_per_block, recovered_people_per_block
@@ -386,13 +386,13 @@ def get_infected_recovered_people_per_block(
     range_infected_date = start_date - timedelta(days=7)
 
     for _, row in filtered_df.iterrows():
-        y, x = float(row["y"]), float(row["x"])
+        lat, long = float(row["y"]), float(row["x"])
         notif_date = pd.to_datetime(row["data_notification"])
-        point: Point = Point(x, y)
+        point: Point = Point(long, lat)
 
         for i, polygon in enumerate(coord_blocks):
             if polygon.contains(point):
-                print(f"[*] Notification at ({x}, {y}) on {notif_date.date()} mapped to block {i}.")
+                print(f"[*] Notification at ({lat}, {long}) on {notif_date.date()} mapped to block {i}.")
                 # if point_in_polygon((y, x), polygon):
                 if notif_date > range_infected_date:
                     infected[i] += 1
@@ -408,7 +408,8 @@ def last_day_of_week(date: datetime.date):
 
 
 def case_in_one_block(row: pd.Series, coord_blocks: List):
-    point = Point(float(row["x"]), float(row["y"]))
+    lat, long = float(row["y"]), float(row["x"])
+    point = Point(long, lat)
     return any(polygon.contains(point) for polygon in coord_blocks)
 
 

@@ -33,8 +33,8 @@ def get_infected_people_per_block(df: pd.DataFrame, graph: Graph, coord_blocks: 
     infected = np.zeros(num_blocks, dtype=int)
 
     for _, row in filtered_df.iterrows():
-        y, x = float(row["y"]), float(row["x"])
-        point: Point = Point(y, x)
+        lat, long = float(row["y"]), float(row["x"])
+        point = Point(long, lat)
 
         for i, polygon in enumerate(coord_blocks):
             if polygon.contains(point):
