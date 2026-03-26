@@ -324,7 +324,7 @@ class SimheuristicFramework:
         logger.info("[*] Extracting and aggregating simulated cases...")
         sim_cases = self._db.query(
             f"SELECT * FROM metrics_infected_people WHERE execution_id = {self._run_id}"
-        ).drop_duplicates(subset=["id"])
+        ).drop_duplicates(subset=["id", "simulation_id"])
 
         b = self._graph.b
 
@@ -743,7 +743,8 @@ class SimheuristicFramework:
         logger.info("[*] Risk Naive Analysis: Computing naive solution...")
         naive_solution = self._call_naive_optimization()
         self._delete_cases_from_run_id()
-        simulation_id = self._run_id + 1
+        self._run_id += 1
+        simulation_id = self._run_id 
         self._db.run_query_insert_solution(simulation_id, naive_solution.get_blocks())
         self._call_simulation(max_cycles=14, is_batch=True, is_short=False, nebulize_solution=simulation_id)
         naive_scenarios: List[List[int]] = self._get_scenario_cases_per_block()
@@ -785,6 +786,7 @@ class SimheuristicFramework:
         for idx, solution in enumerate(sorted_elite):
             simulation_id += 1
             self._delete_cases_from_run_id()
+            self._run_id += 1
             self._db.run_query_insert_solution(simulation_id, solution.get_blocks())
             self._call_simulation(max_cycles=14, is_batch=True, is_short=False, nebulize_solution=simulation_id)
             sol_scenarios: List[List[int]] = self._get_scenario_cases_per_block()
