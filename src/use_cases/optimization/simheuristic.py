@@ -81,6 +81,79 @@ class SimheuristicFramework:
         self._alpha = alpha_model
         self._stochastic_evaluation = stochastic_evaluation
         self._objective_function = objective_function
+        self._debug_data = {
+            "config": {},
+            "initial_scenario": {},
+            "optimization_iterations": [],
+            "elite_solutions": [],
+            "risk_analysis": {},
+        }
+
+    def _collect_initial_scenario_debug(self):
+        logger.info("[DEBUG] Collecting initial scenario data...")
+        d = self._debug_data["initial_scenario"]
+
+        d["infected_per_block"] = self._infected_per_block.tolist() if hasattr(self._infected_per_block, 'tolist') else list(self._infected_per_block)
+        d["total_blocks"] = self._graph.b
+        d["total_initial_infected_people"] = int(np.sum(self._infected_per_block))
+
+        mosquitoes_df = self._db.query(
+            "SELECT curr_building, state, COUNT(*) as cnt FROM mosquitoes "
+            "WHERE execution_id=0 AND simulation_id=0 AND cycle=0 "
+            "GROUP BY curr_building, state"
+        )
+        people_df = self._db.query(
+            "SELECT living_place, state, COUNT(*) as cnt FROM people "
+            "WHERE execution_id=0 AND simulation_id=0 AND cycle=0 "
+            "GROUP BY living_place, state"
+        )
+        bs_df = self._db.query(
+            "SELECT curr_building, COUNT(*) as cnt FROM breeding_sites "
+            "WHERE execution_id=0 AND simulation_id=0 AND cycle=0 "
+            "GROUP BY curr_building"
+        )
+        eggs_df = self._db.query(
+            "SELECT COUNT(*) as cnt FROM eggs "
+            "WHERE execution_id=0 AND simulation_id=0 AND cycle=0"
+        )
+
+        mosq_per_block = {}
+        for _, row in mosquitoes_df.iterrows():
+            blk = int(row["curr_building"])
+            state = int(row["state"])
+            cnt = int(row["cnt"])
+            if blk not in mosq_per_block:
+                mosq_per_block[blk] = {"susceptible": 0, "exposed": 0, "infected": 0, "total": 0}
+            key = {0: "susceptible", 1: "exposed", 2: "infected"}.get(state, "susceptible")
+            mosq_per_block[blk][key] += cnt
+            mosq_per_block[blk]["total"] += cnt
+        d["mosquitoes_per_block"] = mosq_per_block
+        d["total_mosquitoes"] = sum(v["total"] for v in mosq_per_block.values())
+        d["total_infected_mosquitoes"] = sum(v["infected"] for v in mosq_per_block.values())
+
+        ppl_per_block = {}
+        for _, row in people_df.iterrows():
+            blk = int(row["living_place"])
+            state = int(row["state"])
+            cnt = int(row["cnt"])
+            if blk not in ppl_per_block:
+                ppl_per_block[blk] = {"susceptible": 0, "infected": 0, "recovered": 0, "total": 0}
+            key = {0: "susceptible", 1: "infected", 2: "recovered"}.get(state, "susceptible")
+            ppl_per_block[blk][key] += cnt
+            ppl_per_block[blk]["total"] += cnt
+        d["people_per_block"] = ppl_per_block
+        d["total_people"] = sum(v["total"] for v in ppl_per_block.values())
+
+        bs_per_block = {}
+        for _, row in bs_df.iterrows():
+            blk = int(row["curr_building"])
+            bs_per_block[blk] = int(row["cnt"])
+        d["breeding_sites_per_block"] = bs_per_block
+        d["total_breeding_sites"] = sum(bs_per_block.values())
+        d["total_eggs"] = int(eggs_df.iloc[0]["cnt"]) if not eggs_df.empty else 0
+
+        logger.info(f"[DEBUG] Initial scenario: {d['total_people']} people, {d['total_mosquitoes']} mosquitoes, "
+                     f"{d['total_breeding_sites']} BS, {d['total_eggs']} eggs, {d['total_initial_infected_people']} real infected")
 
     def _get_sim_param(self, param_key: str):
         try:
@@ -448,6 +521,15 @@ class SimheuristicFramework:
         # Set starting scenario in GAMA
         self._call_simulation(max_cycles=0, is_batch=False)
 
+        self._debug_data["config"] = {
+            "run_params": self._run_params,
+            "sim_params": self._sim_params,
+            "alpha": self._alpha,
+            "stochastic_evaluation": self._stochastic_evaluation,
+            "objective_function": self._objective_function,
+        }
+        self._collect_initial_scenario_debug()
+
     def clear_run(self):
         self._db.clear_database()
         # self._simulation.kill_gama_headless()
@@ -710,9 +792,340 @@ class SimheuristicFramework:
         )
         plt.close()
 
+    def _generate_debug_report(self):
+        logger.info("[DEBUG] Generating debug HTML report...")
+        d = self._debug_data
+        ini = d["initial_scenario"]
+        ra = d["risk_analysis"]
+        cfg = d["config"]
+
+        b = ini.get("total_blocks", 0)
+        infected_per_block = ini.get("infected_per_block", [])
+        mosq_per_block = ini.get("mosquitoes_per_block", {})
+        ppl_per_block = ini.get("people_per_block", {})
+        bs_per_block = ini.get("breeding_sites_per_block", {})
+
+        all_solutions = ra.get("solutions", [])
+        baseline = ra.get("baseline", {})
+
+        def h(text):
+            import html as html_mod
+            return html_mod.escape(str(text))
+
+        top_blocks_by_infected = sorted(
+            range(len(infected_per_block)),
+            key=lambda i: infected_per_block[i],
+            reverse=True
+        )[:30]
+
+        # --- Build HTML ---
+        parts = []
+        parts.append("<!DOCTYPE html><html><head><meta charset='utf-8'>")
+        parts.append("<title>Simheuristic Debug Report</title>")
+        parts.append("<style>")
+        parts.append("""
+            body { font-family: 'Segoe UI', Arial, sans-serif; margin: 20px 40px; background: #f8f9fa; color: #212529; }
+            h1 { color: #1a237e; border-bottom: 3px solid #1a237e; padding-bottom: 8px; }
+            h2 { color: #283593; margin-top: 32px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+            h3 { color: #3949ab; }
+            table { border-collapse: collapse; margin: 10px 0 20px 0; font-size: 13px; }
+            th, td { border: 1px solid #ccc; padding: 5px 10px; text-align: right; }
+            th { background: #e8eaf6; font-weight: 600; }
+            tr:nth-child(even) { background: #f5f5f5; }
+            .highlight { background: #fff9c4 !important; font-weight: bold; }
+            .stat-box { display: inline-block; background: #e3f2fd; border-radius: 8px; padding: 12px 20px; margin: 6px; text-align: center; }
+            .stat-box .val { font-size: 24px; font-weight: bold; color: #1565c0; }
+            .stat-box .lbl { font-size: 12px; color: #555; }
+            .warn { background: #fff3e0; border-left: 4px solid #ff9800; padding: 10px 16px; margin: 10px 0; }
+            .info { background: #e3f2fd; border-left: 4px solid #1976d2; padding: 10px 16px; margin: 10px 0; }
+            .diag { background: #fce4ec; border-left: 4px solid #c62828; padding: 10px 16px; margin: 10px 0; }
+            .block-list { font-family: monospace; font-size: 12px; word-break: break-all; max-width: 800px; }
+            .overlap-matrix td { text-align: center; min-width: 80px; }
+        """)
+        parts.append("</style></head><body>")
+
+        # ===== 1. CONFIGURATION =====
+        parts.append("<h1>Simheuristic Debug Report</h1>")
+        parts.append("<h2>1. Configuration</h2>")
+        parts.append("<table>")
+        for section_name, section_data in [("Run Params", cfg.get("run_params", {})), ("Sim Params", cfg.get("sim_params", {}))]:
+            for k, v in section_data.items():
+                parts.append(f"<tr><th>{h(section_name)}</th><td>{h(k)}</td><td>{h(v)}</td></tr>")
+        parts.append(f"<tr><th>Model</th><td>alpha</td><td>{cfg.get('alpha', '?')}</td></tr>")
+        parts.append(f"<tr><th>Model</th><td>stochastic_evaluation</td><td>{cfg.get('stochastic_evaluation', '?')}</td></tr>")
+        parts.append(f"<tr><th>Model</th><td>objective_function</td><td>{cfg.get('objective_function', '?')}</td></tr>")
+        parts.append("</table>")
+
+        # ===== 2. INITIAL SCENARIO =====
+        parts.append("<h2>2. Initial Scenario</h2>")
+        parts.append("<div>")
+        for lbl, val in [
+            ("Total Blocks", b),
+            ("Total People", ini.get("total_people", 0)),
+            ("Initial Infected (real cases)", ini.get("total_initial_infected_people", 0)),
+            ("Total Mosquitoes", ini.get("total_mosquitoes", 0)),
+            ("Infected Mosquitoes", ini.get("total_infected_mosquitoes", 0)),
+            ("Total Breeding Sites", ini.get("total_breeding_sites", 0)),
+            ("Total Eggs", ini.get("total_eggs", 0)),
+        ]:
+            parts.append(f"<div class='stat-box'><div class='val'>{val}</div><div class='lbl'>{lbl}</div></div>")
+        parts.append("</div>")
+
+        parts.append("<h3>Top 30 Blocks by Initial Real Infected Cases</h3>")
+        parts.append("<table><tr><th>Block</th><th>Real Infected</th><th>People (total)</th>"
+                     "<th>People (infected)</th><th>Mosquitoes (total)</th><th>Mosq. Infected</th>"
+                     "<th>Breeding Sites</th></tr>")
+        for blk in top_blocks_by_infected:
+            inf = infected_per_block[blk] if blk < len(infected_per_block) else 0
+            ppl = ppl_per_block.get(blk, {})
+            mq = mosq_per_block.get(blk, {})
+            bs = bs_per_block.get(blk, 0)
+            cls = " class='highlight'" if inf > 0 else ""
+            parts.append(f"<tr{cls}><td>{blk}</td><td>{inf}</td><td>{ppl.get('total',0)}</td>"
+                         f"<td>{ppl.get('infected',0)}</td><td>{mq.get('total',0)}</td>"
+                         f"<td>{mq.get('infected',0)}</td><td>{bs}</td></tr>")
+        parts.append("</table>")
+
+        blocks_with_infected = sum(1 for x in infected_per_block if x > 0)
+        blocks_with_mosquitoes = sum(1 for v in mosq_per_block.values() if v.get("total", 0) > 0)
+        parts.append(f"<div class='info'>Blocks with real infected cases: <b>{blocks_with_infected}</b> / {b} "
+                     f"&mdash; Blocks with mosquitoes: <b>{blocks_with_mosquitoes}</b> / {b}</div>")
+
+        # ===== 3. OPTIMIZATION RESULTS =====
+        parts.append("<h2>3. Optimization Results</h2>")
+        opt_iters = d.get("optimization_iterations", [])
+        elite_count = sum(1 for it in opt_iters if it.get("is_elite"))
+        parts.append(f"<div class='stat-box'><div class='val'>{len(opt_iters)}</div><div class='lbl'>Total Iterations</div></div>")
+        parts.append(f"<div class='stat-box'><div class='val'>{elite_count}</div><div class='lbl'>Elite Solutions Found</div></div>")
+        parts.append(f"<div class='stat-box'><div class='val'>{d.get('total_scenarios_accumulated', 0)}</div><div class='lbl'>Scenarios Accumulated</div></div>")
+
+        parts.append("<h3>Final Elite Pool</h3>")
+        elite_sols = d.get("elite_solutions", [])
+        parts.append("<table><tr><th>#</th><th>Num Blocks</th><th>Det OF</th><th>Stochastic OF</th><th>Blocks</th></tr>")
+        for i, es in enumerate(sorted(elite_sols, key=lambda x: x["stochastic_of"], reverse=True)):
+            blocks_str = ", ".join(str(bl) for bl in sorted(es["blocks"]))
+            parts.append(f"<tr><td>{i+1}</td><td>{es['num_blocks']}</td><td>{es['det_of']:.2f}</td>"
+                         f"<td>{es['stochastic_of']:.4f}</td><td class='block-list'>{blocks_str}</td></tr>")
+        parts.append("</table>")
+
+        # ===== 4. SOLUTION COMPARISON =====
+        parts.append("<h2>4. Solution Comparison (Naive vs Elites)</h2>")
+        if all_solutions:
+            naive_sol = all_solutions[0] if all_solutions[0]["id"] == "Naive" else None
+            elite_list = [s for s in all_solutions if s["id"] != "Naive"]
+
+            if naive_sol:
+                naive_blocks_set = set(naive_sol["blocks"])
+                parts.append(f"<h3>Naive Solution: {naive_sol['num_blocks']} blocks, "
+                             f"Det OF = {naive_sol['det_of']:.2f}, Stochastic OF = {naive_sol['stochastic_of']:.4f}</h3>")
+                parts.append(f"<div class='block-list'>Blocks: {sorted(naive_sol['blocks'])}</div>")
+
+                parts.append("<h3>Overlap Matrix</h3>")
+                parts.append("<table class='overlap-matrix'><tr><th>Solution</th><th>Num Blocks</th><th>Det OF</th>"
+                             "<th>Stoch OF</th><th>Overlap w/ Naive</th><th>Only in This</th><th>Only in Naive</th></tr>")
+                for es in elite_list:
+                    es_set = set(es["blocks"])
+                    overlap = naive_blocks_set & es_set
+                    only_elite = es_set - naive_blocks_set
+                    only_naive = naive_blocks_set - es_set
+                    parts.append(f"<tr><td>{es['id']}</td><td>{es['num_blocks']}</td>"
+                                 f"<td>{es['det_of']:.2f}</td><td>{es['stochastic_of']:.4f}</td>"
+                                 f"<td>{len(overlap)}</td><td>{len(only_elite)}</td><td>{len(only_naive)}</td></tr>")
+                parts.append("</table>")
+
+                if elite_list:
+                    parts.append("<h3>Per-Elite Block Detail</h3>")
+                    for es in elite_list:
+                        es_set = set(es["blocks"])
+                        overlap = sorted(naive_blocks_set & es_set)
+                        only_elite = sorted(es_set - naive_blocks_set)
+                        only_naive = sorted(naive_blocks_set - es_set)
+                        parts.append(f"<h4>{es['id']} ({es['num_blocks']} blocks)</h4>")
+                        parts.append(f"<div class='block-list'><b>Overlapping blocks ({len(overlap)}):</b> {overlap}</div>")
+                        parts.append(f"<div class='block-list'><b>Only in {es['id']} ({len(only_elite)}):</b> {only_elite}</div>")
+                        parts.append(f"<div class='block-list'><b>Only in Naive ({len(only_naive)}):</b> {only_naive}</div>")
+
+        # ===== 5. NEBULIZATION IMPACT ESTIMATE =====
+        parts.append("<h2>5. Nebulization Impact Estimate</h2>")
+        total_mosq = ini.get("total_mosquitoes", 0)
+        if all_solutions and total_mosq > 0:
+            parts.append("<table><tr><th>Solution</th><th>Blocks Nebulized</th><th>Mosquitoes in Nebulized Blocks</th>"
+                         "<th>% of Total Mosquitoes</th><th>BS in Nebulized Blocks</th><th>% of Total BS</th></tr>")
+            for sol in all_solutions:
+                mosq_in_nebu = sum(mosq_per_block.get(bl, {}).get("total", 0) for bl in sol["blocks"])
+                bs_in_nebu = sum(bs_per_block.get(bl, 0) for bl in sol["blocks"])
+                pct_mosq = (mosq_in_nebu / total_mosq * 100) if total_mosq > 0 else 0
+                total_bs = ini.get("total_breeding_sites", 1)
+                pct_bs = (bs_in_nebu / total_bs * 100) if total_bs > 0 else 0
+                parts.append(f"<tr><td>{sol['id']}</td><td>{sol['num_blocks']}</td>"
+                             f"<td>{mosq_in_nebu}</td><td>{pct_mosq:.1f}%</td>"
+                             f"<td>{bs_in_nebu}</td><td>{pct_bs:.1f}%</td></tr>")
+            parts.append("</table>")
+
+            parts.append("<div class='warn'><b>Model Limitation:</b> Nebulization in GAMA only kills adult mosquitoes at "
+                         "simulation start (<code>load_starting_scenario</code>). Breeding sites and eggs in nebulized "
+                         "blocks are NOT affected. Eggs hatch into new mosquitoes (rate = bs_eggs_to_mosquitoes = 0.125/cycle), "
+                         "and breeding sites continue producing via oviposition. The mosquito population in nebulized blocks "
+                         "recovers within a few cycles.</div>")
+        else:
+            parts.append("<div class='info'>No solution data available or no mosquitoes in initial scenario.</div>")
+
+        # ===== 6. SIMULATION INFECTION RESULTS =====
+        parts.append("<h2>6. Simulation Infection Results (14-cycle horizon)</h2>")
+        initial_infected = ini.get("total_initial_infected_people", 0)
+
+        parts.append("<h3>Summary Table</h3>")
+        parts.append("<table><tr><th>Scenario</th><th>Num Blocks</th><th>Mean New Infections</th>"
+                     "<th>Std</th><th>Min</th><th>Max</th><th>Median</th>"
+                     "<th>% Change vs Baseline</th></tr>")
+
+        baseline_mean = np.mean(baseline.get("scenario_sums", [0])) if baseline.get("scenario_sums") else 0
+
+        def fmt_pct(val, ref):
+            if ref == 0:
+                return "N/A"
+            pct = ((val - ref) / ref) * 100
+            return f"{pct:+.1f}%"
+
+        bl_sums = baseline.get("scenario_sums", [])
+        if bl_sums:
+            parts.append(f"<tr class='highlight'><td>Baseline</td><td>-</td>"
+                         f"<td>{np.mean(bl_sums):.1f}</td><td>{np.std(bl_sums):.1f}</td>"
+                         f"<td>{np.min(bl_sums)}</td><td>{np.max(bl_sums)}</td>"
+                         f"<td>{np.median(bl_sums):.1f}</td><td>-</td></tr>")
+
+        for sol in all_solutions:
+            s_sums = sol.get("scenario_sums", [])
+            if s_sums:
+                s_mean = np.mean(s_sums)
+                parts.append(f"<tr><td>{sol['id']}</td><td>{sol['num_blocks']}</td>"
+                             f"<td>{s_mean:.1f}</td><td>{np.std(s_sums):.1f}</td>"
+                             f"<td>{np.min(s_sums)}</td><td>{np.max(s_sums)}</td>"
+                             f"<td>{np.median(s_sums):.1f}</td><td>{fmt_pct(s_mean, baseline_mean)}</td></tr>")
+        parts.append("</table>")
+
+        parts.append(f"<div class='info'><b>Note:</b> All values in the table above represent <b>new infections</b> "
+                     f"during the 14-cycle (7-day) simulation horizon. GAMA only records people where "
+                     f"<code>start_infected=false</code> in <code>metrics_infected_people</code>. "
+                     f"Initial infected people from the starting scenario ({initial_infected}) are NOT counted.</div>")
+
+        # Per-block top infections
+        parts.append("<h3>Top 20 Blocks by Avg. New Infections (Baseline)</h3>")
+        bl_avg = baseline.get("avg_infections_per_block", [])
+        if bl_avg:
+            sorted_bl = sorted(range(len(bl_avg)), key=lambda i: bl_avg[i], reverse=True)[:20]
+            parts.append("<table><tr><th>Block</th><th>Avg Baseline Infections</th><th>Initial Real Infected</th>"
+                         "<th>Initial Mosquitoes</th>")
+            for sol in all_solutions:
+                parts.append(f"<th>Avg {sol['id']} Infections</th><th>Nebulized?</th>")
+            parts.append("</tr>")
+            for blk in sorted_bl:
+                bl_inf = bl_avg[blk] if blk < len(bl_avg) else 0
+                real_inf = infected_per_block[blk] if blk < len(infected_per_block) else 0
+                mosq_tot = mosq_per_block.get(blk, {}).get("total", 0)
+                parts.append(f"<tr><td>{blk}</td><td>{bl_inf:.2f}</td><td>{real_inf}</td><td>{mosq_tot}</td>")
+                for sol in all_solutions:
+                    sol_avg = sol.get("avg_infections_per_block", [])
+                    sol_val = sol_avg[blk] if blk < len(sol_avg) else 0
+                    is_nebu = "Yes" if blk in sol["blocks"] else ""
+                    parts.append(f"<td>{sol_val:.2f}</td><td>{is_nebu}</td>")
+                parts.append("</tr>")
+            parts.append("</table>")
+
+        # ===== 7. ROOT CAUSE ANALYSIS =====
+        parts.append("<h2>7. Root Cause Analysis</h2>")
+        diagnostics = []
+
+        if total_mosq > 0 and all_solutions:
+            best_sol = max(all_solutions, key=lambda s: s["num_blocks"])
+            mosq_in_best = sum(mosq_per_block.get(bl, {}).get("total", 0) for bl in best_sol["blocks"])
+            pct = mosq_in_best / total_mosq * 100
+            if pct < 30:
+                diagnostics.append(
+                    f"<div class='diag'><b>Low mosquito coverage:</b> The solution with most blocks ({best_sol['id']}, "
+                    f"{best_sol['num_blocks']} blocks) only covers {mosq_in_best}/{total_mosq} mosquitoes "
+                    f"({pct:.1f}%). Even with 100% kill efficiency, ~{100-pct:.0f}% of mosquitoes survive and continue "
+                    f"the infection cycle.</div>"
+                )
+
+        total_bs_val = ini.get("total_breeding_sites", 0)
+        if total_bs_val > 0 and all_solutions:
+            best_sol = max(all_solutions, key=lambda s: s["num_blocks"])
+            bs_in_best = sum(bs_per_block.get(bl, 0) for bl in best_sol["blocks"])
+            pct_bs = bs_in_best / total_bs_val * 100
+            diagnostics.append(
+                f"<div class='diag'><b>Breeding sites untouched:</b> Nebulization does NOT deactivate breeding "
+                f"sites or destroy eggs. In the best solution ({best_sol['id']}), {bs_in_best}/{total_bs_val} "
+                f"BS ({pct_bs:.1f}%) are in nebulized blocks but remain active. Eggs continue hatching "
+                f"(rate=0.125/cycle) and mosquitoes in remaining blocks oviposit (rate=0.02/cycle), "
+                f"quickly replenishing the killed mosquitoes.</div>"
+            )
+
+        diagnostics.append(
+            "<div class='diag'><b>Nebulization is a one-time event:</b> Mosquitoes are only killed during "
+            "<code>load_starting_scenario</code> (cycle 0). After that, all 14 cycles run without any "
+            "intervention. New mosquitoes born from eggs and oviposition are unaffected.</div>"
+        )
+
+        if bl_avg and all_solutions:
+            baseline_top10 = sorted(range(len(bl_avg)), key=lambda i: bl_avg[i], reverse=True)[:10]
+            for sol in all_solutions:
+                sol_blocks_set = set(sol["blocks"])
+                covered = sum(1 for blk in baseline_top10 if blk in sol_blocks_set)
+                if covered < 5:
+                    diagnostics.append(
+                        f"<div class='warn'><b>Solution '{sol['id']}' misses top-infection blocks:</b> Only "
+                        f"{covered}/10 of the blocks with highest baseline infections are nebulized by this solution. "
+                        f"The optimization objective (deterministic OF from real cases) may not align well with "
+                        f"where the simulation generates new infections.</div>"
+                    )
+
+        if baseline.get("scenario_sums") and all_solutions:
+            bl_mean = np.mean(baseline["scenario_sums"])
+            for sol in all_solutions:
+                s_mean = np.mean(sol.get("scenario_sums", [0]))
+                reduction = (bl_mean - s_mean) / bl_mean * 100 if bl_mean > 0 else 0
+                if abs(reduction) < 5:
+                    diagnostics.append(
+                        f"<div class='warn'><b>Negligible reduction for {sol['id']}:</b> "
+                        f"Mean new infections changed from {bl_mean:.1f} (baseline) to {s_mean:.1f} "
+                        f"({reduction:+.1f}%). This suggests nebulizing adult mosquitoes alone has minimal "
+                        f"impact on new infections over 14 cycles.</div>"
+                    )
+
+        if not diagnostics:
+            diagnostics.append("<div class='info'>No specific diagnostics triggered.</div>")
+        parts.extend(diagnostics)
+
+        # ===== 8. GAMA MODEL PARAMETERS =====
+        parts.append("<h2>8. GAMA Model Parameters (Reference)</h2>")
+        gama_params = [
+            ("step", "12 hours"), ("max_cycles", "14 (7 simulated days)"),
+            ("nebulizer_efficiency", "1.0 (batch default)"), ("bs_insecticide_efficiency", "0.0 (unused)"),
+            ("mosquitoes_death_rate", "0.01/cycle"), ("mosquitoes_oviposition_rate", "0.02/cycle"),
+            ("bs_eggs_to_mosquitoes", "0.125/cycle"), ("bs_aquatic_phase_mortality_rate", "0.066/cycle"),
+            ("mosquitoes_daily_rate_of_bites", "0.168"), ("mosquitoes_frac_infectious_bites", "0.6"),
+            ("mosquitoes_susceptibility_to_dengue", "0.526"), ("mosquitoes_daily_latency_rate", "0.143"),
+            ("people_daily_recovery_rate", "0.143"), ("mosquitoes_move_probability", "0.5 (batch default)"),
+            ("max_move_radius", "50m"),
+        ]
+        parts.append("<table><tr><th>Parameter</th><th>Value</th></tr>")
+        for name, val in gama_params:
+            parts.append(f"<tr><td>{h(name)}</td><td>{h(val)}</td></tr>")
+        parts.append("</table>")
+
+        parts.append("</body></html>")
+
+        report_path = os.path.join(self._output_folder, "debug_report.html")
+        with open(report_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(parts))
+        logger.info(f"[DEBUG] Report saved to {report_path}")
+
     def risk_naive_analysis(self):
         boxplot_data = []
         stats_data = []
+        ra = self._debug_data["risk_analysis"]
+        ra["solutions"] = []
 
         # --- 1. Baseline (no nebulization) ---
         logger.info("[*] Risk Naive Analysis: Running baseline simulation...")
@@ -720,6 +1133,13 @@ class SimheuristicFramework:
         self._call_simulation(max_cycles=14, is_batch=True, is_short=False)
         baseline_scenarios: List[List[int]] = self._get_scenario_cases_per_block()
         baseline_sums = [sum(s) for s in baseline_scenarios]
+
+        avg_infections_per_block_baseline = np.mean(baseline_scenarios, axis=0).tolist() if baseline_scenarios else []
+        ra["baseline"] = {
+            "scenario_sums": baseline_sums,
+            "avg_infections_per_block": avg_infections_per_block_baseline,
+            "num_scenarios": len(baseline_scenarios),
+        }
 
         baseline_avg = np.mean(baseline_sums)
         for cs in baseline_sums:
@@ -777,6 +1197,17 @@ class SimheuristicFramework:
         logger.info(f"[*] Naive — Det. OF: {naive_solution.get_deterministic_of()}, "
                      f"Stochastic OF: {round(naive_stochastic_of, 4)}")
 
+        avg_infections_per_block_naive = np.mean(naive_scenarios, axis=0).tolist() if naive_scenarios else []
+        ra["solutions"].append({
+            "id": "Naive",
+            "blocks": naive_solution.get_blocks(),
+            "num_blocks": len(naive_solution.get_blocks()),
+            "det_of": naive_solution.get_deterministic_of(),
+            "stochastic_of": naive_stochastic_of,
+            "scenario_sums": naive_sums,
+            "avg_infections_per_block": avg_infections_per_block_naive,
+        })
+
         sorted_elite = sorted(
             self._elite_stochastic_solutions,
             key=lambda s: s.get_stochastic_of(),
@@ -819,6 +1250,17 @@ class SimheuristicFramework:
             })
             logger.info(f"[*] Elite {idx + 1} — Det. OF: {solution.get_deterministic_of()}, "
                          f"Stochastic OF: {round(stochastic_of, 4)}")
+
+            avg_infections_per_block_elite = np.mean(sol_scenarios, axis=0).tolist() if sol_scenarios else []
+            ra["solutions"].append({
+                "id": f"Elite_{idx + 1}",
+                "blocks": solution.get_blocks(),
+                "num_blocks": len(solution.get_blocks()),
+                "det_of": solution.get_deterministic_of(),
+                "stochastic_of": stochastic_of,
+                "scenario_sums": sol_sums,
+                "avg_infections_per_block": avg_infections_per_block_elite,
+            })
 
         # --- 4. Save stats ---
         stats_df = pd.DataFrame(stats_data)
@@ -886,6 +1328,8 @@ class SimheuristicFramework:
             format="pdf", bbox_inches="tight"
         )
         plt.close()
+
+        self._generate_debug_report()
         logger.info("[*] Risk Naive Analysis complete.")
 
     def run(self, socket_str: str, max_time_seconds: int = 120, elite_size: int = 10, max_iters_with_surrogate: int = 100):
@@ -923,10 +1367,20 @@ class SimheuristicFramework:
         self._best_deterministic_solution = start_solution
         heapq.heappush(self._elite_stochastic_solutions, start_solution)
 
+        self._debug_data["optimization_iterations"].append({
+            "iteration": 0,
+            "blocks": start_solution.get_blocks(),
+            "num_blocks": len(start_solution.get_blocks()),
+            "det_of": start_solution.get_deterministic_of(),
+            "stochastic_of": start_solution.get_stochastic_of(),
+            "is_elite": True,
+        })
+
         logger.info("[*] Starting the First Stage...")
         start_time = time.time()
         elapsed_time: float = 0.0
         iterations = 0
+        total_iterations = 0
         
         while elapsed_time < max_time_seconds:
             opt_start_time = time.time()
@@ -942,7 +1396,19 @@ class SimheuristicFramework:
             stochastic_of = self._evaluate_deterministic_solution(new_det_solution)
             logger.info(f"Evaluation time: {time.time() - eval_start_time:.2f} seconds")
     
-            if (stochastic_of > self._best_deterministic_solution.get_stochastic_of()):
+            total_iterations += 1
+            is_elite = stochastic_of > self._best_deterministic_solution.get_stochastic_of()
+
+            self._debug_data["optimization_iterations"].append({
+                "iteration": total_iterations,
+                "blocks": new_det_solution.get_blocks(),
+                "num_blocks": len(new_det_solution.get_blocks()),
+                "det_of": new_det_solution.get_deterministic_of(),
+                "stochastic_of": stochastic_of,
+                "is_elite": is_elite,
+            })
+
+            if is_elite:
                 self._best_deterministic_solution = new_det_solution
                 heapq.heappush(self._elite_stochastic_solutions, new_det_solution)  
 
@@ -958,6 +1424,13 @@ class SimheuristicFramework:
             logger.info(f"Elapsed time in iteration {iterations}: {elapsed_time:.2f} seconds")
         
         self._call_optimization(action="stop")
+
+        self._debug_data["elite_solutions"] = [
+            {"blocks": s.get_blocks(), "num_blocks": len(s.get_blocks()),
+             "det_of": s.get_deterministic_of(), "stochastic_of": s.get_stochastic_of()}
+            for s in self._elite_stochastic_solutions
+        ]
+        self._debug_data["total_scenarios_accumulated"] = len(self._scenarios)
         
         risk_start_time = time.time()
         # self.risk_analysis()
