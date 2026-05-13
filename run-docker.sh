@@ -38,7 +38,7 @@ echo ""
 
 docker run --rm \
     --name "$CONTAINER_NAME" \
-    --memory=64g \
+    --memory=18g \
     --cpus="$(nproc)" \
     -v "$RESULTS_DIR:/app/results-output" \
     "$IMAGE_NAME" \

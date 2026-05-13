@@ -1,3 +1,4 @@
+# Recomendado para Mac M4
 FROM python:3.12-slim AS python-base
 
 # Set work directory
@@ -104,11 +105,11 @@ RUN mkdir -p /external-libs/gama && \
 
 RUN chmod -R 777 /external-libs/gama/headless
 
-# Increase GAMA JVM memory to 64GB for large experiments
-RUN sed -i 's/-Xms8192m/-Xms65536m/g' /external-libs/gama/Gama.ini && \
-    sed -i 's/-Xmx8192m/-Xmx65536m/g' /external-libs/gama/Gama.ini && \
-    sed -i 's/-Xmn2048m/-Xmn8192m/g' /external-libs/gama/Gama.ini && \
-    sed -i 's/-Xms8192m/-Xms65536m/g' /external-libs/gama/headless/gama-headless.sh
+# Increase GAMA JVM memory to 12GB
+RUN sed -i 's/-Xms8192m/-Xms12288m/g' /external-libs/gama/Gama.ini && \
+    sed -i 's/-Xmx8192m/-Xmx12288m/g' /external-libs/gama/Gama.ini && \
+    sed -i 's/-Xmn2048m/-Xmn4096m/g' /external-libs/gama/Gama.ini && \
+    sed -i 's/-Xms8192m/-Xms12288m/g' /external-libs/gama/headless/gama-headless.sh
 
 # Download and extract Boost 1.90.0 to /opt
 RUN wget -q https://archives.boost.io/release/1.90.0/source/boost_1_90_0.tar.gz -O /tmp/boost_1_90_0.tar.gz && \
