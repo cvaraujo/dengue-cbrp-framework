@@ -173,4 +173,4 @@ cython_debug/
 # Data
 src/includes/*
 experiments/
-external-libs/
+external-libs/*

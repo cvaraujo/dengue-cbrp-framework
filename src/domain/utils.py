@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import List
 from datetime import datetime, timedelta
 import math, os
@@ -439,3 +440,80 @@ def prepare_parameters(shp_path, start_exec_id, exec_id, start_date, max_cycles,
         "save_states": ("bool", save_states),
         "solution_id": ("int", nebulize_solution),
     }
+
+
+def detect_and_correct_outliers(self, values: list, threshold: float = 0.8) -> tuple:
+        """
+        Detecta outliers em uma série temporal usando mudanças percentuais.
+        Outliers são definidos como mudanças de (threshold * 100)% ou mais em relação à semana anterior.
+        
+        Args:
+            values: Lista de valores (casos por semana)
+            threshold: Limite de mudança percentual para considerar outlier
+        
+        Returns:
+            Tuple contendo:
+            - corrected_values: Lista com valores ajustados nos outliers
+            - outlier_indices: Índices onde outliers foram detectados
+            - projected_values: Dict com índices -> valores projetados
+        """
+        corrected_values = deepcopy(values)
+        outlier_indices = []
+        
+        # Começar do índice 1 para comparar com a semana anterior
+        for i in range(1, len(values) - 1):
+            prev_value = corrected_values[i - 1]
+            current_value = corrected_values[i]
+            next_value = corrected_values[i + 1]
+            
+            # Calcular mudança percentual
+            if prev_value == 0:
+                # Se valor anterior é 0, considerar outlier apenas em casos extremos
+                is_outlier = current_value > 0 and next_value > 0 and (current_value / next_value > 2 or next_value / current_value > 2)
+            else:
+                change_ratio = abs(current_value - prev_value) / prev_value
+                is_outlier = change_ratio >= threshold
+            
+            if is_outlier:
+                # Calcular valor projetado como média entre anterior e próximo
+                projected_value = (prev_value + next_value) / 2
+                corrected_values[i] = int(round(projected_value))
+                outlier_indices.append(i)
+        
+        return corrected_values, outlier_indices
+
+def get_plot_translations(language: str):
+    """Retorna um dicionário de traduções para textos de plotagem com base no idioma especificado."""
+    translations = {
+        "pt": {
+            "real_cases": "Casos Reais",
+            "real_cases_projected": "Casos Reais Projetados",
+            "avg_simulated": "Média de Casos Simulados",
+            "simulated_cases": "Casos Simulados",
+            "weeks": "Semanas",
+            "week": "Semana",
+            "number_of_notifications": "Número de notificações",
+            "epidemic_curve_title": "Curva epidêmica de {city} (a partir de {date})",
+            "weekly_metric_title": "Evolução Semanal de {metric}",
+            "mosquito_metric_ylabel": "{metric}",
+            "vaccination_impact_title": "Impacto da vacinação na curva epidêmica de {city} (Eficácia de {efficacy}%)",
+            "week_column": "Semana",
+            "accumulated_reduction": "Redução Acumulada (%)",
+        },
+        "en": {
+            "real_cases": "Real Cases",
+            "real_cases_projected": "Real Cases Projected",
+            "avg_simulated": "Avg Simulated Cases",
+            "simulated_cases": "Simulated Cases",
+            "weeks": "Weeks",
+            "week": "Week",
+            "number_of_notifications": "Number of Notifications",
+            "epidemic_curve_title": "Epidemic Curve for {city} (starting from {date})",
+            "weekly_metric_title": "Weekly {metric} Evolution",
+            "mosquito_metric_ylabel": "{metric}",
+            "vaccination_impact_title": "Vaccination impact on epidemic curve for {city} (Efficacy {efficacy}%)",
+            "week_column": "Week",
+            "accumulated_reduction": "Accumulated Reduction (%)",
+        },
+    }
+    return translations.get(language, translations["pt"])

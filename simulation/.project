@@ -27,6 +27,106 @@
 			<location>/home/carlos/Documentos/dengue-cbrp-framework/includes/ALTO SANTO_500/buildings.shp</location>
 		</link>
 		<link>
+			<name>external/copy of copy of buildings.shp</name>
+			<type>1</type>
+			<location>/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/src/includes/GUARATIBA_5000/buildings.shp</location>
+		</link>
+		<link>
+			<name>external/copy of copy of copy of buildings.shp</name>
+			<type>1</type>
+			<location>/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/src/includes/GUARATIBA_0/buildings.shp</location>
+		</link>
+		<link>
+			<name>external/copy of copy of copy of copy of buildings.shp</name>
+			<type>1</type>
+			<location>/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/src/includes/LIMOEIRO_2000/buildings.shp</location>
+		</link>
+		<link>
+			<name>external/copy of copy of copy of copy of copy of buildings.shp</name>
+			<type>1</type>
+			<location>/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/src/includes/ALTO SANTO_700/buildings.shp</location>
+		</link>
+		<link>
+			<name>external/copy of copy of copy of copy of copy of copy of buildings.shp</name>
+			<type>1</type>
+			<location>/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/src/includes/GUARATIBA_15000/buildings.shp</location>
+		</link>
+		<link>
+			<name>external/copy of copy of copy of copy of copy of copy of copy of buildings.shp</name>
+			<type>1</type>
+			<location>/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/src/includes/Guaratiba_0/buildings.shp</location>
+		</link>
+		<link>
+			<name>external/copy of copy of copy of copy of copy of copy of copy of copy of copy of copy of edges.shp</name>
+			<type>1</type>
+			<location>/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/src/includes/Guaratiba_0/edges.shp</location>
+		</link>
+		<link>
+			<name>external/copy of copy of copy of copy of copy of copy of copy of copy of copy of copy of nodes.shp</name>
+			<type>1</type>
+			<location>/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/src/includes/Guaratiba_0/nodes.shp</location>
+		</link>
+		<link>
+			<name>external/copy of copy of copy of copy of copy of copy of copy of copy of copy of edges.shp</name>
+			<type>1</type>
+			<location>/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/src/includes/GUARATIBA_15000/edges.shp</location>
+		</link>
+		<link>
+			<name>external/copy of copy of copy of copy of copy of copy of copy of copy of copy of nodes.shp</name>
+			<type>1</type>
+			<location>/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/src/includes/GUARATIBA_15000/nodes.shp</location>
+		</link>
+		<link>
+			<name>external/copy of copy of copy of copy of copy of copy of copy of copy of edges.shp</name>
+			<type>1</type>
+			<location>/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/src/includes/ALTO SANTO_700/edges.shp</location>
+		</link>
+		<link>
+			<name>external/copy of copy of copy of copy of copy of copy of copy of copy of nodes.shp</name>
+			<type>1</type>
+			<location>/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/src/includes/ALTO SANTO_700/nodes.shp</location>
+		</link>
+		<link>
+			<name>external/copy of copy of copy of copy of copy of copy of copy of edges.shp</name>
+			<type>1</type>
+			<location>/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/src/includes/LIMOEIRO_2000/edges.shp</location>
+		</link>
+		<link>
+			<name>external/copy of copy of copy of copy of copy of copy of copy of nodes.shp</name>
+			<type>1</type>
+			<location>/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/src/includes/LIMOEIRO_2000/nodes.shp</location>
+		</link>
+		<link>
+			<name>external/copy of copy of copy of copy of copy of copy of edges.shp</name>
+			<type>1</type>
+			<location>/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/src/includes/GUARATIBA_0/edges.shp</location>
+		</link>
+		<link>
+			<name>external/copy of copy of copy of copy of copy of copy of nodes.shp</name>
+			<type>1</type>
+			<location>/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/src/includes/GUARATIBA_0/nodes.shp</location>
+		</link>
+		<link>
+			<name>external/copy of copy of copy of copy of copy of edges.shp</name>
+			<type>1</type>
+			<location>/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/src/includes/GUARATIBA_5000/edges.shp</location>
+		</link>
+		<link>
+			<name>external/copy of copy of copy of copy of copy of nodes.shp</name>
+			<type>1</type>
+			<location>/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/src/includes/GUARATIBA_5000/nodes.shp</location>
+		</link>
+		<link>
+			<name>external/copy of copy of copy of copy of edges.shp</name>
+			<type>1</type>
+			<location>/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/src/includes/GUARATIBA_2000/edges.shp</location>
+		</link>
+		<link>
+			<name>external/copy of copy of copy of copy of nodes.shp</name>
+			<type>1</type>
+			<location>/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/src/includes/GUARATIBA_2000/nodes.shp</location>
+		</link>
+		<link>
 			<name>external/copy of copy of copy of copy of route_0.csv</name>
 			<type>1</type>
 			<location>/home/carlos/Documents/phd/code/dengue-arp-tool/temp/simulation_0/cycle_0/scenario_0/route/route_0.csv</location>

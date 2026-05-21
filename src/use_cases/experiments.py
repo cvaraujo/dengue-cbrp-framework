@@ -1,4 +1,6 @@
 import logging
+import time
+import numpy as np
 
 from use_cases.simulation_metrics import *
 
@@ -11,7 +13,7 @@ class Experiments:
 
     def __init__(self, 
                  output_folder,
-                 city_name, 
+                 city_name,
                  map_size, 
                  start_date,
                  people_per_m2, 
@@ -19,7 +21,9 @@ class Experiments:
                  nb_breeding_sites, 
                  proportion_infected_mosquitoes_without_cases, 
                  proportion_infected_mosquitoes_with_cases,
-                 max_cycles):
+                 simulation_identifier, 
+                 max_cycles,
+                 plot_language="pt"):
         self.output_folder = output_folder
         self.city_name = city_name
         self.map_size = map_size
@@ -30,8 +34,9 @@ class Experiments:
         self.proportion_infected_mosquitoes_without_cases = proportion_infected_mosquitoes_without_cases
         self.proportion_infected_mosquitoes_with_cases = proportion_infected_mosquitoes_with_cases
         self.max_cycles = max_cycles
+        self.simulation_identifier = simulation_identifier
+        self.plot_language = plot_language
 
-        self.simulation_identifier = self.city_name.split(',')[0].strip()
        
         self.simulation_metrics = SimulationMetrics(output_folder=output_folder,
                                                         city=city_name,
@@ -41,7 +46,8 @@ class Experiments:
                                                         mosquitoes_per_person=mosquitoes_per_person,
                                                         nb_breeding_sites=nb_breeding_sites,
                                                         proportion_infected_mosquitoes_without_cases=proportion_infected_mosquitoes_without_cases,
-                                                        proportion_infected_mosquitoes_with_cases=proportion_infected_mosquitoes_with_cases)
+                                                        proportion_infected_mosquitoes_with_cases=proportion_infected_mosquitoes_with_cases,
+                                                        plot_language=plot_language)
     
     def _get_parameters_dict(self):
         return {
@@ -207,8 +213,8 @@ class Experiments:
                 {"name":f"{props_vaccinated[6] * 100}% vacinados", "color":"pink", "dash":"solid"}
         ]
 
-        # logger.info("[*] Clearing data from database...")
-        # sim_metrics.db.clear_database()
+        logger.info("[*] Clearing data from database...")
+        self.simulation_metrics.db.clear_database()
 
         exec_id = 0
 
@@ -221,18 +227,99 @@ class Experiments:
                     "vaccine_efficacy": ("float", efficacy)
                 }
 
-            #     logger.info("[*] Comparing simulated with real cases for date {} and proportion of vaccinated people {}...".format(start_date, prop))
-            #     sim_metrics.compare_simulated_with_real_cases(exec_id=exec_id,clear_db=False, plot=False, additional_params=additional_params)
+                logger.info("[*] Comparing simulated with real cases for date {} and proportion of vaccinated people {}...".format(self.start_date, prop))
+                self.simulation_metrics.compare_simulated_with_real_cases(exec_id=exec_id,clear_db=False, plot=False, additional_params=additional_params)
 
                 exec_id += 1
             
-            self.simulation_metrics.plot_multiple_execs(
+            self.simulation_metrics.plot_vaccination(
                 self.output_folder + f"vaccination_strategies_{efficacy}",
                 len(props_vaccinated),
                 range(exec_id - len(props_vaccinated), exec_id),
                 style_dict,
-                title=f"Impact of Vaccination on Dengue cases in {self.simulation_identifier} (efficacy of {efficacy*100}%)"
+                efficacy
             )
+
+    def parameters_sensibility(self):
+        mosquitoes_per_person_list = [0.5, 3.5]
+        mosquitoes_block_with_cases_list = [0.01, 1.2]
+        mosquitoes_block_without_cases_list = [0.25, 0.5, 0.75, 1.0]
+        i = 0
+
+        for mosquitoes_per_person in np.arange(mosquitoes_per_person_list[0], mosquitoes_per_person_list[1], 0.5):
+            for mosquitoes_block_with_cases in np.arange(mosquitoes_block_with_cases_list[0], mosquitoes_block_with_cases_list[1], 0.1):
+                for mosquitoes_block_without_cases in mosquitoes_block_without_cases_list:
+                    logger.info(f"[*] Running parameters sensibility experiment for mosquitoes_per_person={mosquitoes_per_person}, mosquitoes_block_with_cases={mosquitoes_block_with_cases}, mosquitoes_block_without_cases={mosquitoes_block_without_cases}...")
+
+                    self.simulation_metrics.db.clear_database()                        
+                    sg: ScenarioGeneration = ScenarioGeneration(
+                        execution_id=i,
+                        simulation_id=0,
+                        cycle=0,
+                        started_from_cycle=0,
+                        start_date=self.start_date,
+                        connection=self.simulation_metrics.db,
+                    )
+
+                    sg.create_starting_scenario(
+                        people_per_block=self.simulation_metrics.people_block,
+                        infected_people_per_block=self.simulation_metrics.infected,
+                        recovered_people_per_block=self.simulation_metrics.recovered,
+                        mosquitoes_per_person=mosquitoes_per_person,
+                        nb_breeding_sites=self.simulation_metrics.nb_breeding_sites,
+                        proportion_infected_mosquitoes_without_cases=(mosquitoes_block_without_cases * mosquitoes_block_with_cases),
+                        proportion_infected_mosquitoes_with_cases=mosquitoes_block_with_cases,
+                        sample_size=self.simulation_metrics.sample_size,  
+                    )
+
+                    logger.info("[*] Running batch simulation...")
+                    sim: Simulation = Simulation()
+                    params = self.simulation_metrics._prepare_parameters(
+                        self.simulation_metrics.shp_path, i, self.start_date, max_cycles=self.max_cycles, save_states=False
+                    )
+                    
+                    start = time.time()
+                    sim.run_simulation(
+                        JsonAdapter.convert_param_2_list(params), is_batch=False, is_short=False, experiment="parameters_analysis"
+                    )
+                    elapsed = time.time() - start
+                    logger.info(f"[*] Simulation took {elapsed:.2f} seconds.")
+                    i += 1
+   
+        logger.info("[*] Finished parameters sensibility experiment!")
+        logger.info(f"[*] Total simulations run: {i}")
+
+    def parameters_tuning_experiment(self):
+        mosquitoes_per_person_list = [0.5, 1.1]
+        mosquitoes_block_with_cases_list = [0.1, 0.6]
+        mosquitoes_block_without_cases_list = [0.25, 0.5,1.0]
+        i = 0
+
+        output_folder = "/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/experiments/parameters_tuning/{}/".format(self.simulation_identifier)
+        os.makedirs(output_folder, exist_ok=True)
+        logger.info(f"[*] Output folder: {output_folder}")
+
+        for mosquitoes_per_person in np.arange(mosquitoes_per_person_list[0], mosquitoes_per_person_list[1], 0.5):
+            for mosquitoes_block_with_cases in np.arange(mosquitoes_block_with_cases_list[0], mosquitoes_block_with_cases_list[1], 0.1):
+                for mosquitoes_block_without_cases in mosquitoes_block_without_cases_list:
+                    logger.info(f"[*] Running parameters sensibility experiment for mosquitoes_per_person={mosquitoes_per_person}, mosquitoes_block_with_cases={mosquitoes_block_with_cases}, mosquitoes_block_without_cases={mosquitoes_block_without_cases}...")
+                    self.simulation_metrics = SimulationMetrics(output_folder= output_folder,
+                                                        city=self.city_name,
+                                                        map_size=0,
+                                                        start_date="2024-01-28",
+                                                        people_per_m2=self.simulation_metrics.people_block,
+                                                        max_cycles=self.max_cycles,
+                                                        mosquitoes_per_person=mosquitoes_per_person,
+                                                        nb_breeding_sites=self.nb_breeding_sites,
+                                                        proportion_infected_mosquitoes_without_cases=(mosquitoes_block_with_cases * mosquitoes_block_without_cases),
+                                                        proportion_infected_mosquitoes_with_cases=mosquitoes_block_with_cases,
+                                                        plot_language=self.plot_language)
+    
+                    self.simulation_metrics.compare_simulated_with_real_cases(exec_id=i,clear_db=True, plot=True)
+                    i += 1
+   
+        logger.info("[*] Finished parameters tuning experiment!")
+        logger.info(f"[*] Total simulations run: {i}")
 
     def run_all_params_exp(self):
         """
