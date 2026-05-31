@@ -89,8 +89,8 @@ global {
 	int max_work_end <- 19;
 	
 	// Speed
-	float people_min_speed <- 20.0 #km / #h;
-	float people_max_speed <- 60.0 #km / #h;
+	float people_min_speed <- 10.0 #km / #h;
+	float people_max_speed <- 40.0 #km / #h;
 	
 	// Recovery rate
 	float people_daily_recovery_rate <- 0.143; // TODO: remove 0's
@@ -115,7 +115,7 @@ global {
 	// Oviposition capacity
 	int mosquitoes_max_carrying_capacity <- 3;
 	// Max move distance
-	float max_move_radius <- 150.0 #m;
+	float max_move_radius <- 50.0 #m;
 	
 	// ----------------------------------------------------------
 	// ------------- Breeding site global parameters ------------
@@ -128,7 +128,7 @@ global {
 	// ----------------------------------------------------------
 	// --------------- Logistics global parameters --------------
 	// ----------------------------------------------------------
-	float nebulizer_efficiency <- 0.8;
+	float nebulizer_efficiency <- 0.9;
 	float bs_insecticide_efficiency <- 0.0;
 	int solution_id <- -1;
 	list<bool> need_nebulize;
@@ -245,7 +245,7 @@ global {
 			" and simulation_id=" + string(start_from_scenario) + " and cycle=" + string(start_from_cycle) + "; ";
 		}
 					
-		write "[!] Removing Old Data from Database...";
+//		write "[!] Removing Old Data from Database...";
 		ask Saver {
 			do executeUpdate(
 				params: POSTGRES,
@@ -262,7 +262,7 @@ global {
 		int cnt <- 1;
 		int nb <- length(Mosquitoes);
 		
-		write "[!] Querying mosquitoes... " + string(nb);
+//		write "[!] Querying mosquitoes... " + string(nb);
 		ask Mosquitoes {
 			query_mosquitoes <- query_mosquitoes + prefix + ", '" + self.name + "', " + string(self.id) + ", '" + string(self.date_of_birth) +
 			"' , " + string(self.speed) + ", " + string(self.state) + ", " + string(self.current_building.id) +
@@ -276,7 +276,7 @@ global {
 		}
 				
 		// --------------------------------- People ---------------------------------	
-		write "[!] Querying People...";
+//		write "[!] Querying People...";
 		string query_people <- "INSERT INTO people(execution_id, simulation_id, cycle, 
 			started_from_cycle, name, id, date_of_birth, objective, speed, state, living_place,
 			working_place, start_work_h, end_work_h, x, y) VALUES";
@@ -299,7 +299,7 @@ global {
 		}
 		
 		// --------------------------------- Breeding Sites ---------------------------------
-		write "[!] Querying BS...";	
+//		write "[!] Querying BS...";	
 		string query_bs <- "INSERT INTO breeding_sites(execution_id, simulation_id, cycle, 
 			started_from_cycle, name, id, date_of_birth, active, eggs, curr_building, x, y) VALUES";
 	
@@ -319,7 +319,7 @@ global {
 			cnt <- cnt + 1;
 		}
 		
-		write "[!] Inserting New Data into Database...";
+//		write "[!] Inserting New Data into Database...";
 		ask Saver {
 			do executeUpdate(
 				params: POSTGRES,
@@ -486,28 +486,37 @@ global {
 		
 		write "Mosquitoes: " + string(length(Mosquitoes));
 		if fill_data {
-			write "[!] Fill Data in Start Scenario...";	
+//			write "[!] Fill Data in Start Scenario...";	
 			do update_start_scenario;
 		}
 	}
 	
 	action load_blocks_to_nebulize {
-		int num_blocks <- length(Buildings);
-		need_nebulize <- list_with(num_blocks, false);
-	
-		if solution_id != -1 {	
-			ask Saver {			
+		// Size from Roads.block_id (matches Python graph.b). Buildings can be a smaller
+		// subset because polygons with area = 0 are filtered out in create_street_blocks_and_save,
+		// so using max(Buildings.id) here used to crash with IndexOutOfBounds when the optimizer
+		// returned a block id outside the Buildings subset.
+		int max_block_id <- max([Roads max_of(each.block_id), Buildings max_of(each.id)]);
+		need_nebulize <- list_with(max_block_id + 1, false);
+
+		if solution_id != -1 {
+			ask Saver {
 				list<list> select_blocks <- self.select(
 					params: POSTGRES,
 					select: "SELECT blocks FROM blocks_to_nebulize where (solution_id=?);",
 					values:[solution_id]
 				);
-				
-				
+
 				loop blocks over: select_blocks[2] {
 					list<string> blocks_to_nebulize <- blocks[0] split_with ",";
 					loop b over: blocks_to_nebulize {
-						need_nebulize[int(b)] <- true;
+						int bi <- int(b);
+						if (bi >= 0 and bi < length(need_nebulize)) {
+							need_nebulize[bi] <- true;
+						} else {
+							write "[!] load_blocks_to_nebulize: skipping out-of-range block id " + bi
+								+ " (valid range 0.." + (length(need_nebulize) - 1) + ")";
+						}
 					}
 				}
 			}
@@ -541,10 +550,10 @@ global {
 		// Create the street blocks that turns into Buildings
 		// Specie to save the others
 		if !file_exists(building_filename) {
-			write "[!] Create Street Blocks...";
+//			write "[!] Create Street Blocks...";
 			do create_street_blocks_and_save;			
 		} else {
-			write "[!] Load Street Blocks...";
+//			write "[!] Load Street Blocks...";
 			building_shapefile <- file(building_filename);
 			create Buildings from: building_shapefile with: [name::read("name"), id::int(read("id")), location::read("location")];
 		}
@@ -553,15 +562,15 @@ global {
 		do load_blocks_to_nebulize();
 		
 		if use_initial_scenario {
-			write "[!] Use Initial Scenario...";
-			write "[!] Load Starting Scenario...";			
+//			write "[!] Use Initial Scenario...";
+//			write "[!] Load Starting Scenario...";			
 			do load_starting_scenario;
 		} else {
-			write "[!] Create Starting Scenario...";	
+//			write "[!] Create Starting Scenario...";	
 			do create_starting_scenario;
 		}
 		
-		write "[!] Model is Loaded...";
+//		write "[!] Model is Loaded...";
 	}
 }
 
@@ -860,7 +869,7 @@ species Saver skills: [SQLSKILL] {
 		
 		cnt <- 1;
 		nb <- length(People);
-		write "Save States: " + prefix;
+//		write "Save States: " + prefix;
 		
 		
 		ask People {
@@ -944,7 +953,7 @@ species Saver skills: [SQLSKILL] {
 		int cnt <- 1;
 		int nb <- People count ((each.state = 1) and (each.start_infected = false));
 		
-		write "[SAVE]-> " + string(execution_id) + " - " + string(scenario_id) + " - " + string(start_from_cycle + cycle) + " => " + string(nb);
+//		write "[SAVE]-> " + string(execution_id) + " - " + string(scenario_id) + " - " + string(start_from_cycle + cycle) + " => " + string(nb);
 		
 		ask People {
 			if self.state = 1 and self.start_infected = false {
@@ -983,7 +992,7 @@ species Saver skills: [SQLSKILL] {
 			scenario_id <- int(simulation_id[1]) + 1;
 		}
 		
-		write "[SAVE_METRICS] Saving on Execution: " + string(execution_id) + " - " + string(scenario_id) + " - " + string(cycle) + "...";
+//		write "[SAVE_METRICS] Saving on Execution: " + string(execution_id) + " - " + string(scenario_id) + " - " + string(cycle) + "...";
 		
 		int exposed   <- 0;
 		int infected  <- People count ((each.state = 1) and (each.start_infected = false));
@@ -1049,7 +1058,7 @@ experiment dengue_propagation type: gui until: (cycle >= max_cycles and end_simu
 }
 
 
-experiment long_headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 100 {
+experiment long_headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 70 {
 	//
 	parameter "Type of execution" var: run_batch category: "bool" init: true;
 	parameter "Start Date" var: start_date_str category: "string" init: "2020-05-08";
@@ -1097,6 +1106,6 @@ experiment short_headless_dengue_propagation type: batch keep_seed: true until: 
 	parameter "Scenario number" var: start_from_scenario category: "int" init: 1;
 	parameter "Cycle number" var: start_from_cycle category: "int" init: 0;
 	parameter "Save" var: save_states category: "bool" init: false;
-	parameter "Nebulizer Efficiency" var: nebulizer_efficiency category: "float" init: 0.8;
+	parameter "Nebulizer Efficiency" var: nebulizer_efficiency category: "float" init: 1.0;
 	parameter "OPT Solution id" var: solution_id category: "int" init: 1;
 }
