@@ -1,5 +1,6 @@
 from typing import List
-from venv import logger
+import logging
+logger = logging.getLogger(__name__)
 import pandas as pd
 import logging
 from sqlalchemy import create_engine, text
@@ -17,7 +18,7 @@ class PostgreSQLAdapter:
         port=5432,
         dbname="dengue-propagation",
         user="postgres",
-        password="07021997",
+        password="postgres",
     ):
         self.database_url = (
             f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{dbname}"
@@ -38,7 +39,7 @@ class PostgreSQLAdapter:
             WHERE pid <> pg_backend_pid()
               AND datname = :dbname
               AND state = 'idle';
-        """
+            """
         )
         self.conn.execute(query, {"dbname": "dengue-propagation"})
         self.conn.commit()
@@ -78,7 +79,18 @@ class PostgreSQLAdapter:
             self.conn.execute(query)
         self.conn.commit()
 
+    def query_remove(self, query_str: str):
+        query = text(query_str)
+        self.conn.execute(query)
+        self.conn.commit()
+
     def run_query_with_records(self, query: str, records: List):
         if len(records) > 0:
             self.conn.execute(query, records)
             self.conn.commit()
+
+    def run_query_insert_solution(self, solution_id: int, blocks: List[int]):
+        query = text(f"INSERT INTO blocks_to_nebulize (solution_id, blocks) VALUES (:solution_id, :blocks)")
+        blocks_str = ",".join(str(b) for b in blocks)
+        self.conn.execute(query, {"solution_id": solution_id, "blocks": blocks_str})
+        self.conn.commit()

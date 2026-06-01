@@ -1,6 +1,7 @@
 from typing import Dict, List, Tuple, Optional
 import copy
-from venv import logger
+import logging
+logger = logging.getLogger(__name__)
 from domain.node import *
 from domain.arc import *
 from domain.utils import compute_faces

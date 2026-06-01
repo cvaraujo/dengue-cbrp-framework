@@ -1,10 +1,10 @@
 import os
-import re
 from typing import List
 from matplotlib import legend
 import pandas as pd
 from datetime import datetime
-from venv import logger
+import logging
+logger = logging.getLogger(__name__)
 
 from shapely import Polygon, Point
 import adapters.json.json_adapter as JsonAdapter
@@ -18,6 +18,9 @@ import domain.utils as Utils
 import numpy as np
 from datetime import timedelta, datetime
 import matplotlib.pyplot as plt
+import matplotlib as mpl
+from scipy.stats import pearsonr
+from sklearn.metrics import mean_absolute_error
 
 
 class SimulationMetrics:
@@ -57,7 +60,12 @@ class SimulationMetrics:
         map_size: int,
         start_date: str,
         exec_id: int,
-        people_per_km2: float,
+        people_per_m2: float,
+        mosquitoes_per_person: float = 0.5,
+        nb_breeding_sites: int = 100,
+        proportion_infected_mosquitoes_without_cases: float = 0.05,
+        proportion_infected_mosquitoes_with_cases: float = 0.4,
+        max_cycles: int = 180,
         plot: bool = True,
     ):
         logger.info("[*] Clearing data from database...")
@@ -70,22 +78,28 @@ class SimulationMetrics:
         logger.info("[*] Retrieving dengue cases...")
         city_key, city_file = self._get_city_info(city)
         start_datetime = datetime.strptime(start_date, "%Y-%m-%d")
-        prev_date = start_datetime - timedelta(days=6)
+        prev_date = start_datetime - timedelta(days=7)
         cases = self.db.get_notifications_between_dates(
             prev_date.strftime("%Y-%m-%d"), start_date, city_key
         )
 
         logger.info("[*] Processing blocks and population data...")
         coord_blocks: List[Polygon] = Utils.all_blocks_as_polygons(graph)
-        people_block = Utils.compute_people_per_block(graph, people_per_km2)
+        people_block: List = Utils.compute_people_per_block(
+            graph, people_per_m2, coord_blocks
+        )
+
+        logger.info(f"[*] There are {sum(people_block)} people in simulation...")
+
         infected, recovered = Utils.get_infected_recovered_people_per_block(
             cases, graph, start_datetime, coord_blocks
         )
 
+        print(infected)
         starting_num_infected = np.sum(infected)
 
         logger.info(f"[*] Starting number of infected people {starting_num_infected}")
-        if starting_num_infected <= 5:
+        if starting_num_infected < 5:
             logger.error("[!] Not enough infected people to run the simulation.")
             return
 
@@ -103,10 +117,10 @@ class SimulationMetrics:
             people_per_block=people_block,
             infected_people_per_block=infected,
             recovered_people_per_block=recovered,
-            mosquitoes_per_person=1.0,
-            nb_breeding_sites=50,
-            proportion_infected_mosquitoes_without_cases=0.05,
-            proportion_infected_mosquitoes_with_cases=0.4,
+            mosquitoes_per_person=mosquitoes_per_person,
+            nb_breeding_sites=nb_breeding_sites,
+            proportion_infected_mosquitoes_without_cases=proportion_infected_mosquitoes_without_cases,
+            proportion_infected_mosquitoes_with_cases=proportion_infected_mosquitoes_with_cases,
         )
 
         logger.info("[*] Exporting SHP files...")
@@ -123,9 +137,11 @@ class SimulationMetrics:
 
         logger.info("[*] Running batch simulation...")
         params = self._prepare_parameters(
-            shp_path, exec_id, start_date, max_cycles=180, save_states=True
+            shp_path, exec_id, start_date, max_cycles=max_cycles, save_states=True
         )
-        sim.run_simulation(JsonAdapter.convert_param_2_list(params), is_batch=True)
+        sim.run_simulation(
+            JsonAdapter.convert_param_2_list(params), is_batch=True, is_short=False
+        )
 
         if plot:
             self.plot_min_max_avg_real(
@@ -134,8 +150,15 @@ class SimulationMetrics:
                 city_key,
                 exec_id,
                 coord_blocks,
-                os.path.join(self.output_folder, f"{city_key}_{map_size}"),
+                os.path.join(
+                    self.output_folder,
+                    f"{city_key}_{map_size}_{mosquitoes_per_person}_{nb_breeding_sites}_{proportion_infected_mosquitoes_without_cases}_{proportion_infected_mosquitoes_with_cases}",
+                ),
             )
+
+        # logger.info("[*] Clearing data from database and closing GAMA...")
+        # self.db.clear_database()
+        # sim.kill_gama_headless()
 
     def plot_min_max_avg_real(
         self,
@@ -197,11 +220,14 @@ class SimulationMetrics:
         sim_weeks = sorted(df_sim_grouped["week_str"].unique())
         metrics = []
 
+        # First week represents the start cenários + cases from StartDate (considering approximate two cycles here)
         weeks = [1]
         avg_y = [start_num_infected]
         real_y = [start_num_infected]
         sim_x = [1]
         sim_y = [start_num_infected]
+        max_sim_y = [start_num_infected]
+        min_sim_y = [start_num_infected]
 
         metrics.append(
             {
@@ -238,20 +264,72 @@ class SimulationMetrics:
             real_y.append(weekly_real)
             sim_x.extend([i] * len(weekly_sim))
             sim_y.extend(weekly_sim)
+            max_sim_y.append(max_sim)
+            min_sim_y.append(min_sim)
 
-        logger.info("[*] Saving basic analysis CSV...")
-        pd.DataFrame(metrics).to_csv(filename + ".csv", sep=";", index=False)
+        logger.info("[*] Saving basic data...")
+        pd.DataFrame(metrics).to_csv(filename + ".csv", sep=",", index=False)
+
+        logger.info("[*] Saving statistics...")
+        p_avg = pearsonr(avg_y, real_y)
+        corr_avg, p_value_avg = p_avg
+        ci_avg = p_avg.confidence_interval(confidence_level=0.95)
+        p_max = pearsonr(max_sim_y, real_y)
+        corr_max, p_value_max = p_max
+        ci_max = p_max.confidence_interval(confidence_level=0.95)
+        mae = mean_absolute_error(real_y, avg_y)
+        in_endemic_chan = sum(
+            [
+                1
+                for i in range(len(real_y))
+                if real_y[i] <= max_sim_y[i] and real_y[i] >= min_sim_y[i]
+            ]
+        )
+
+        # Create a DataFrame with metrics
+        df_metrics = pd.DataFrame(
+            {
+                "Metric": [
+                    "Pearson Avg",
+                    "CI Avg Lower",
+                    "CI Avg Upper",
+                    "P-Value Avg",
+                    "Pearson Max",
+                    "CI Max Lower",
+                    "CI Max Upper",
+                    "P-Value Max",
+                    "MAE",
+                    "Inside Endemic Channel",
+                ],
+                "Value": [
+                    corr_avg,
+                    ci_avg.low,
+                    ci_avg.high,
+                    p_value_avg,
+                    corr_max,
+                    ci_max.low,
+                    ci_max.high,
+                    p_value_max,
+                    mae,
+                    in_endemic_chan,
+                ],
+            }
+        )
+
+        # Export to CSV
+        df_metrics.to_csv(filename + "_quality_metrics.csv", sep=",", index=False)
 
         logger.info("[*] Saving figure as PDF...")
         plt.figure(figsize=(10, 6))
-        plt.plot(weeks, real_y, label="", marker="o", linestyle="-", color="#36454F")
-        plt.plot(weeks, avg_y, label="", linestyle="--", color="#808080")
-        plt.scatter(sim_x, sim_y, label="", marker="x", color="#B2BEB5")
+        plt.plot(weeks, real_y, label="Real Cases", marker="o", linestyle="-", color="#36454F")
+        plt.plot(weeks, avg_y, label="Avg Simulated Cases", linestyle="--", color="#808080")
+        plt.scatter(sim_x, sim_y, label="Simulated Cases", marker="x", color="#B2BEB5")
 
         plt.xlabel("Weeks")
         plt.ylabel("Number of Notifications")
         plt.grid(True)
         plt.xticks(weeks)
+        plt.legend()  # Show the labels in the figure
         plt.tight_layout()
         plt.savefig(filename + ".pdf", format="pdf", bbox_inches="tight")
         plt.close()

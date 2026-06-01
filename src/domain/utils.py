@@ -1,9 +1,14 @@
 from typing import List
 from datetime import datetime, timedelta
-import math
+import math, os
+import logging
+logger = logging.getLogger(__name__)
 import numpy as np
 import pandas as pd
 from shapely.geometry import Point, Polygon
+import geopandas as gpd
+from matplotlib import pyplot as plt
+import time
 
 
 def on_segment(p, q, r):
@@ -311,6 +316,7 @@ def all_blocks_as_polygons(graph):
     polygons = []
     for block_index in range(graph.b):
         if block_index in graph.block_nodes:
+
             coords = [
                 (graph.nodes[j].lon, graph.nodes[j].lat)
                 for j in graph.block_nodes[block_index]
@@ -334,29 +340,22 @@ def point_in_any_polygon(point: Point, polygon: Polygon):
     return polygon.contains(point)
 
 
-def compute_people_per_block(graph, people_per_km2: float):
-    """
-    Computes estimated people per block using min and max arc lengths.
-
-    Args:
-        graph: An object with `block_arcs`, where each block_arcs[i] is a list of arcs with a `length` attribute.
-        people_per_km2: Density of people per km² (float).
-
-    Returns:
-        A NumPy array of estimated people per block (rounded up).
-    """
+def compute_people_per_block(graph, people_per_m2: float, coord_blocks: List):
     num_blocks = graph.b
     people_per_block = np.zeros(num_blocks, dtype=np.float64)
 
     for i in range(num_blocks):
-        lengths = [arc.length for arc in graph.block_arcs[i]]
-        if lengths:
-            min_len = min(lengths)
-            max_len = max(lengths)
-            area_est = max_len * min_len
-            people_per_block[i] = math.ceil(area_est * people_per_km2)
-        else:
-            people_per_block[i] = 0.0
+        area_m2 = 0.0
+        try:
+            gdf = gpd.GeoDataFrame(
+                index=[0], crs="EPSG:4326", geometry=[coord_blocks[i]]
+            )
+            gdf = gdf.to_crs(epsg=31983)  # EPSG:31983 = SIRGAS 2000 / UTM zone 23S
+            area_m2 = gdf.geometry.area.iloc[0]
+        except Exception as e:
+            logger.info(f"[*] Problem to compute area of block {i}: {e}")
+            area_m2 = 0.0
+        people_per_block[i] = math.ceil(area_m2 * people_per_m2)
 
     return people_per_block
 
@@ -390,16 +389,14 @@ def get_infected_recovered_people_per_block(
         y, x = float(row["y"]), float(row["x"])
         notif_date = pd.to_datetime(row["data_notification"])
         point: Point = Point(y, x)
-
+        
         for i, polygon in enumerate(coord_blocks):
             if polygon.contains(point):
-                # if point_in_polygon((y, x), polygon):
                 if notif_date > range_infected_date:
                     infected[i] += 1
                 else:
                     recovered[i] += 1
                 break  # once matched to a block, stop checking
-
     return infected, recovered
 
 
@@ -410,3 +407,31 @@ def last_day_of_week(date: datetime.date):
 def case_in_one_block(row: pd.Series, coord_blocks: List):
     point = Point(float(row["x"]), float(row["y"]))
     return any(polygon.contains(point) for polygon in coord_blocks)
+
+
+def get_city_info(city: str):
+    if city == "Alto Santo, Ceará, Brasil":
+        return "ALTO SANTO", "Alto Santo, Ceará, Brasil"
+    return "LIMOEIRO", "Limoeiro do Norte, Ceará, Brasil"
+
+
+def build_shapefile_path(city_key: str, map_size: int) -> str:
+    path = os.path.abspath(f"./includes/{city_key}_{map_size}")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def prepare_parameters(shp_path, start_exec_id, exec_id, start_date, max_cycles, save_states, nebulize_solution=-1):
+    return {
+        "sqlite_ds": ("string", ""),
+        "max_cycles": ("int", max_cycles),
+        "default_shp_dir": ("string", shp_path),
+        "use_initial_scenario": ("bool", True),
+        "start_from_cycle": ("int", 0),
+        "start_from_scenario": ("int", 0),
+        "start_from_execution_id": ("int", start_exec_id),
+        "start_date_str": ("string", start_date),
+        "execution_id": ("int", exec_id),
+        "save_states": ("bool", save_states),
+        "solution_id": ("int", nebulize_solution),
+    }

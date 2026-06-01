@@ -38,8 +38,7 @@ CREATE TABLE mosquitoes (
     curr_building INT DEFAULT -1,
     bs_id INT DEFAULT -1,
     x FLOAT DEFAULT -1.0,
-    y FLOAT DEFAULT -1.0,
-    PRIMARY KEY (execution_id, simulation_id, started_from_cycle, cycle, id)
+    y FLOAT DEFAULT -1.0
 );
 
 CREATE TABLE breeding_sites (
@@ -54,8 +53,7 @@ CREATE TABLE breeding_sites (
     eggs INT DEFAULT -1,
     curr_building INT DEFAULT -1,
     x FLOAT DEFAULT -1.0,
-    y FLOAT DEFAULT -1.0,
-    PRIMARY KEY (execution_id, simulation_id, started_from_cycle, cycle, id)
+    y FLOAT DEFAULT -1.0
 );
 
 CREATE TABLE eggs (
@@ -79,8 +77,7 @@ CREATE TABLE metrics (
     exposed INT DEFAULT 0,
     infected INT DEFAULT 0,
     recovered INT DEFAULT 0,
-    dead INT DEFAULT 0,
-    PRIMARY KEY (execution_id, simulation_id, started_from_cycle, cycle, event_date)
+    dead INT DEFAULT 0
 );
 
 CREATE TABLE metrics_infected_people (
@@ -92,19 +89,20 @@ CREATE TABLE metrics_infected_people (
 	living_place INT NOT NULL
 );
 
+CREATE TABLE blocks_to_nebulize (
+  solution_id INT NOT NULL,
+  blocks TEXT
+);
+
+-- select * from blocks_to_nebulize;
 CREATE TABLE cases (
-    city varchar,
+    city VARCHAR(100),
     data_notification DATE,
     data_first_symptoms DATE,
-    classification int,
+    classification VARCHAR(50),
     x FLOAT,
     y FLOAT
 );
 
--- SELECT pg_terminate_backend(pid)
--- FROM pg_stat_activity
--- WHERE pid <> pg_backend_pid()
---   AND datname = 'dengue-propagation'
---   AND state = 'idle';
-
--- COPY cases FROM '/tmp/sinan_cases.csv' WITH (FORMAT csv, HEADER true);
+COPY cases (city, data_notification, data_first_symptoms, classification, x, y)
+FROM '/app/simulation/data/sinan_cases.csv' WITH (FORMAT csv, HEADER true);

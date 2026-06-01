@@ -13,7 +13,7 @@
 	</buildSpec>
 	<natures>
 		<nature>org.eclipse.xtext.ui.shared.xtextNature</nature>
-		<nature>msi.gama.application.gamaNature</nature>
+		<nature>gama.ui.application.gamaNature</nature>
 	</natures>
 	<linkedResources>
 		<link>
@@ -22,14 +22,29 @@
 			<location>/home/carlos/Documents/phd/code/dengue-arp-tool/simulation/includes/buildings.shp</location>
 		</link>
 		<link>
+			<name>external/copy of buildings.shp</name>
+			<type>1</type>
+			<location>/home/carlos/Documentos/dengue-cbrp-framework/includes/ALTO SANTO_500/buildings.shp</location>
+		</link>
+		<link>
 			<name>external/copy of copy of copy of copy of route_0.csv</name>
 			<type>1</type>
 			<location>/home/carlos/Documents/phd/code/dengue-arp-tool/temp/simulation_0/cycle_0/scenario_0/route/route_0.csv</location>
 		</link>
 		<link>
+			<name>external/copy of copy of copy of edges.shp</name>
+			<type>1</type>
+			<location>/home/carlos/Documentos/dengue-cbrp-framework/includes/ALTO SANTO_500/edges.shp</location>
+		</link>
+		<link>
 			<name>external/copy of copy of copy of mosquitoes.csv</name>
 			<type>1</type>
 			<location>/home/carlos/Documents/phd/code/dengue-arp-tool/temp/simulation_0/cycle_14/scenario_0/species_data/mosquitoes.csv</location>
+		</link>
+		<link>
+			<name>external/copy of copy of copy of nodes.shp</name>
+			<type>1</type>
+			<location>/home/carlos/Documentos/dengue-cbrp-framework/includes/ALTO SANTO_500/nodes.shp</location>
 		</link>
 		<link>
 			<name>external/copy of copy of copy of outbreaks.csv</name>

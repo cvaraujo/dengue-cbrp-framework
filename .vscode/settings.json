@@ -4,4 +4,6 @@
     "editor.formatOnSave": true,
     "python.linting.enabled": true,
     "python.analysis.autoImportCompletions": true,
+    "cursorpyright.analysis.autoImportCompletions": true,
+    "git.ignoreLimitWarning": true,
 }

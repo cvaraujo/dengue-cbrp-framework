@@ -1,0 +1,45 @@
+# Virtual environment
+.venv/
+
+# External libraries (large binaries/zips)
+external-libs/
+
+# Git internals
+.git/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Simulation runs and results
+simheuristic_runs/
+results/
+results-docker/
+
+# Cache and temp
+cache/
+temp/
+.cache/
+.pytest_cache/
+
+# Simulation includes (generated/downloaded)
+includes/
+simulation/includes/
+
+# Data files
+*.csv
+*.pdf
+*.zip
+*.osm
+*.png
+
+# Local config / misc
+local/
+sudo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# GAMA platform (large binary)
+GAMA_1.9.2_Linux_with_JDK.zip

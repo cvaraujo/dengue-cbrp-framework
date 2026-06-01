@@ -1,20 +1,23 @@
 import asyncio, json, websockets, psutil, subprocess
-from venv import logger
+import logging
+logger = logging.getLogger(__name__)
 from pathlib import Path
 
 
 class Simulation:
     def __init__(
         self,
-        server_path: str = "/home/carlos/Documentos/GAMA_1.9.2_Linux_with_JDK/headless/gama-headless.sh",
+        server_path: str = "/external-libs/gama/headless/gama-headless.sh",
         server_port: str = "6868",
         model: str = "/home/carlos/Documentos/dengue-cbrp-framework/simulation/models/dengue_propagation.gaml",
     ):
         self.server_path = Path(server_path).resolve()
         self.server_port = server_port
         self.model = Path(model).resolve()
-        self.websocket_url = f"ws://localhost:{self.server_port}"
-        # self._run_gama_headless_with_socket()
+        self.websocket_url = f"ws://localhost:{server_port}"
+        self._run_gama_headless_with_socket()
+        logger.info(f"[*] Connecting to GAMA WebSocket at {self.websocket_url}")
+
 
     async def _send_message(self, websocket, message: dict):
         msg = json.dumps(message)
@@ -44,14 +47,19 @@ class Simulation:
                     logger.info("[*] Batch simulation ended.")
                     return
 
-    async def _run(self, parameters: list[dict], is_batch: bool):
+    async def _run(self, parameters: list[dict], is_batch: bool, short: bool = False):
         async with websockets.connect(self.websocket_url) as websocket:
+            experiment = "dengue_propagation"
+            if is_batch:
+                experiment = (
+                    "short_headless_dengue_propagation"
+                    if short
+                    else "long_headless_dengue_propagation"
+                )
             load_cmd = {
                 "type": "load",
                 "model": str(self.model),
-                "experiment": (
-                    "headless_dengue_propagation" if is_batch else "dengue_propagation"
-                ),
+                "experiment": experiment,
                 "status": True,
                 "until": "end_simulation = true",
                 "parameters": parameters,
@@ -62,9 +70,14 @@ class Simulation:
 
     def _run_gama_headless_with_socket(self):
         try:
+            if self.is_gama_running():
+                logger.info("[*] GAMA is already running.")
+                return
+
+            logger.info("[*] Starting GAMA...")
             subprocess.Popen(
                 [self.server_path, "-socket", self.server_port],
-                stdout=subprocess.DEVNULL,  # ou use subprocess.PIPE para capturar a saída
+                stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
         except FileNotFoundError:
@@ -74,13 +87,14 @@ class Simulation:
         except Exception as e:
             logger.error(f"Error to start GAMA: {e}")
 
-    def run_simulation(self, parameters: list[dict], is_batch: bool = False):
-        logger.info(f"[*] Connecting to GAMA WebSocket at {self.websocket_url}")
+    def run_simulation(
+        self, parameters: list[dict], is_batch: bool = False, is_short: bool = False
+    ):
         try:
-            asyncio.run(self._run(parameters, is_batch))
-            logger.info("[*] Simulation finished successfully.")
+            asyncio.run(self._run(parameters, is_batch, is_short))
         except Exception as e:
             logger.error(f"[!] Simulation failed: {e}")
+            exit(1)
 
     def is_gama_running(self, process_name: str = "gama-headless"):
         for proc in psutil.process_iter(attrs=["pid", "name"]):
@@ -90,3 +104,15 @@ class Simulation:
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
         return False
+
+    def kill_gama_headless(self):
+        for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+            try:
+                cmdline = proc.info.get("cmdline")
+                if cmdline and any("GAMA_1.9.2_" in part for part in cmdline):
+                    logger.info(
+                        f"Ending GAMA process {proc.info['pid']}: {' '.join(proc.info['cmdline'])}"
+                    )
+                    proc.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
