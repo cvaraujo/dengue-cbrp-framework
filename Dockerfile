@@ -110,16 +110,32 @@ RUN sed -i 's/-Xms8192m/-Xms65536m/g' /external-libs/gama/Gama.ini && \
     sed -i 's/-Xmn2048m/-Xmn8192m/g' /external-libs/gama/Gama.ini && \
     sed -i 's/-Xms8192m/-Xms65536m/g' /external-libs/gama/headless/gama-headless.sh
 
-# Download and extract Boost 1.90.0 to /opt
-RUN wget -q https://archives.boost.io/release/1.90.0/source/boost_1_90_0.tar.gz -O /tmp/boost_1_90_0.tar.gz && \
-    mkdir -p /opt && \
-    tar -xzf /tmp/boost_1_90_0.tar.gz -C /opt && \
-    rm /tmp/boost_1_90_0.tar.gz
-
-# Download and extract LEMON 1.3.1 to /opt
-RUN wget -q http://lemon.cs.elte.hu/pub/sources/lemon-1.3.1.zip -O /tmp/lemon-1.3.1.zip && \
-    unzip -q /tmp/lemon-1.3.1.zip -d /opt && \
-    rm /tmp/lemon-1.3.1.zip
+# Optional local archives: docker-build-deps/ is included by COPY . . above.
+# Single RUN reads /app/docker-build-deps directly (avoids stale layer cache where /tmp had only Boost).
+RUN mkdir -p /opt && \
+    DEPS=/app/docker-build-deps && \
+    if [ -d "$DEPS" ]; then echo "[docker] docker-build-deps:"; ls -la "$DEPS" || true; fi && \
+    if [ -f "$DEPS/boost_1_90_0.tar.gz" ]; then \
+      echo "[docker] Using local $DEPS/boost_1_90_0.tar.gz"; \
+      tar -xzf "$DEPS/boost_1_90_0.tar.gz" -C /opt; \
+    else \
+      echo "[docker] Downloading Boost 1.90.0..."; \
+      wget -q https://archives.boost.io/release/1.90.0/source/boost_1_90_0.tar.gz -O /tmp/boost_1_90_0.tar.gz && \
+      tar -xzf /tmp/boost_1_90_0.tar.gz -C /opt && \
+      rm -f /tmp/boost_1_90_0.tar.gz; \
+    fi && \
+    if [ -f "$DEPS/lemon-1.3.1.zip" ]; then \
+      echo "[docker] Using local $DEPS/lemon-1.3.1.zip"; \
+      unzip -q "$DEPS/lemon-1.3.1.zip" -d /opt; \
+    elif [ -f "$DEPS/lemon-1.3.1.tar.gz" ]; then \
+      echo "[docker] Using local $DEPS/lemon-1.3.1.tar.gz"; \
+      tar -xzf "$DEPS/lemon-1.3.1.tar.gz" -C /opt; \
+    else \
+      echo "[docker] Downloading LEMON 1.3.1..."; \
+      wget -q http://lemon.cs.elte.hu/pub/sources/lemon-1.3.1.zip -O /tmp/lemon-1.3.1.zip && \
+      unzip -q /tmp/lemon-1.3.1.zip -d /opt && \
+      rm -f /tmp/lemon-1.3.1.zip; \
+    fi
 
 # Build and install LEMON from source
 WORKDIR /opt/lemon-1.3.1

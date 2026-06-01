@@ -18,7 +18,7 @@ default_as_sim_params = {
 }
 
 default_lm_sim_params = {
-    "people_per_km2": 0.003,
+    "people_per_km2": 0.004,
     "mosquitoes_per_person": 1.0,
     "nb_breeding_sites": 300,
     "proportion_infected_mosquitoes_without_cases": 0.2,
@@ -51,17 +51,9 @@ default_connection_params = {
 }
 
 BATCH_DATES = {
-    "AS": [
-        ("2017-01-01", "2017-01-08"),
-        ("2017-01-08", "2017-01-15"),
-        ("2017-01-15", "2017-01-22"),
-        ("2017-01-22", "2017-01-29"),
-        ("2017-01-01", "2017-01-29"),
-    ],
     "LM": [
-        ("2020-06-21", "2020-06-28"),
+        ("2020-06-28", "2020-07-05"),
         ("2020-07-05", "2020-07-12"),
-        ("2020-07-12", "2020-07-19"),
         ("2020-07-19", "2020-07-26"),
         ("2020-07-05", "2020-07-26"),
     ],
@@ -69,9 +61,9 @@ BATCH_DATES = {
 
 BATCH_PARAMS = {
     "alphas": [0.8],
-    "map_sizes": [700, 1000, 1500, 2000],
-    "max_iters_with_surrogate": [100, 500],
-    "runtime": 1800,
+    "map_sizes": [1000, 1500],
+    "max_iters_with_surrogate": [100],
+    "runtime": 120,
     "elite_size": 5,
     "stochastic_evaluation": "default",
     "objective_function": "FULL",

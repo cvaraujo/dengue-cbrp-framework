@@ -137,6 +137,11 @@ venv.bak/
 temp/*
 simheuristic_runs/*
 
+# Local Docker build caches (keep README / .gitkeep only)
+docker-build-deps/*
+!docker-build-deps/.gitkeep
+!docker-build-deps/README.txt
+
 
 # Spyder project settings
 .spyderproject
