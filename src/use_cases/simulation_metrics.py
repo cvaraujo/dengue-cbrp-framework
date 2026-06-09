@@ -133,7 +133,13 @@ class SimulationMetrics:
 
         return shp_path, coord_blocks, people_block, infected, recovered, starting_num_infected
     
-    def compare_simulated_with_real_cases(self, exec_id: int, clear_db: bool = True, plot: bool = True, additional_params: dict = None):            
+    def compare_simulated_with_real_cases(self, 
+                                          exec_id: int, 
+                                          clear_db: bool = True, 
+                                          plot: bool = True, 
+                                          additional_params: dict = None,
+                                          save_states: bool = True, 
+                                          experiment: str = "long_headless_dengue_propagation"):            
         if clear_db:
             logger.info("[*] Clearing data from database...")
             self.db.clear_database()
@@ -162,18 +168,15 @@ class SimulationMetrics:
         logger.info("[*] Running batch simulation...")
         sim: Simulation = Simulation()
         params = self._prepare_parameters(
-            self.shp_path, exec_id, self.start_date, max_cycles=self.max_cycles, save_states=True
+            self.shp_path, exec_id, self.start_date, max_cycles=self.max_cycles, save_states=save_states
         )
         params.update(additional_params or {})
         
         sim.run_simulation(
-            JsonAdapter.convert_param_2_list(params), is_batch=True, is_short=False
+            JsonAdapter.convert_param_2_list(params), is_batch=True, is_short=False, experiment=experiment
         )
 
         if plot: self.plot_min_max_avg_real(exec_id=exec_id)
-
-        # logger.info("[*] Clearing data from database and closing GAMA...")
-        # self.db.clear_database()
 
     def plot_min_max_avg_real(self, exec_id: int):
         filename = os.path.join(

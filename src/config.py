@@ -3,13 +3,6 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-ALLOWED_EXPERIMENTS = {
-    "vaccination",
-    "parameters_sensibility",
-    "parameters_tuning",
-    "comparison_real_simulated",
-}
-
 @dataclass
 class ExperimentConfig:
     experiment: str
@@ -56,11 +49,6 @@ class ExperimentConfig:
         return config
 
     def validate(self) -> None:
-        if self.experiment not in ALLOWED_EXPERIMENTS:
-            raise ValueError(
-                f"Invalid experiment '{self.experiment}'. Allowed values: {sorted(ALLOWED_EXPERIMENTS)}"
-            )
-
         if not self.region:
             raise ValueError("The 'region' configuration value is required.")
 

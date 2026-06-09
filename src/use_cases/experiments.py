@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 import time
 import numpy as np
 
@@ -328,3 +329,163 @@ class Experiments:
         self.oviposition_experiment()
         self.aquatic_mortality_experiment()
         self.mosquito_death_rate_experiment()  
+
+    def budget_nebulization_experiment(self):
+        """
+        Run a nebulization experiment to evaluate the impact of different budget allocations for nebulization on dengue transmission.
+        """
+        budgets = [5000, 10000, 50000, 100000, 300000, 500000, 700000, 1000000, 5000000]
+        # A cada 100 reais -> 1 bloco nebulizado no inicio da simulação
+        blocks_nebulize = [budget//100 for budget in budgets]
+
+        logger.info("[*] Clearing data from database...")
+        self.simulation_metrics.db.clear_database()
+
+        st_time = time.time()
+        for i, budget in enumerate(budgets):
+            logger.info(f"[*] Running nebulization budget experiment for budget {budget} (nebulizing {blocks_nebulize[i]} blocks)...")
+
+            additional_params = {
+                "nebulizer_experiment": ("bool", True),
+                "nb_blocks_nebulize": ("int", blocks_nebulize[i]),
+                "nebulizer_efficiency": ("float", 0.8),
+                "budget": ("int", budget),
+                "output_dir": ("str", os.path.abspath(self.output_folder))
+            }
+
+            self.simulation_metrics.compare_simulated_with_real_cases(exec_id=i, 
+                                                                      clear_db=True, 
+                                                                      plot=False, 
+                                                                      additional_params=additional_params, 
+                                                                      save_states=False, 
+                                                                      experiment="short_headless_dengue_propagation")
+            elapsed_time = time.time() - st_time
+            logger.info(f"[*] Finished nebulization budget experiment for budget {budget} in {elapsed_time//60:.2f} minutes.")
+        
+        elapsed_time = time.time() - st_time
+        logger.info(f"[*] Finished all nebulization budget experiments in {elapsed_time//60:.2f} minutes.")
+    
+    def budget_breeding_elimination_experiment(self):
+        """
+        Run a breeding site elimination experiment to evaluate the impact of different budget allocations for breeding site elimination on dengue transmission.
+        """
+        budgets = [5000, 10000, 50000, 100000, 300000, 500000, 700000, 1000000, 5000000]
+        # A cada 500 reais -> 1 agente visitando 5 blocos no inicio da simulação
+        blocks_nebulize = [(budget//500) * 5 for budget in budgets]
+
+        logger.info("[*] Clearing data from database...")
+        self.simulation_metrics.db.clear_database()
+
+        st_time = time.time()
+        for i, budget in enumerate(budgets):
+            logger.info(f"[*] Running breeding site elimination budget experiment for budget {budget} (visiting {blocks_nebulize[i]} blocks)...")
+
+            additional_params = {
+                "bs_elimination_experiment": ("bool", True),
+                "nb_blocks_bs_elimination": ("int", blocks_nebulize[i]),
+                "budget": ("int", budget),
+                "output_dir": ("str", os.path.abspath(self.output_folder))
+            }
+
+            self.simulation_metrics.compare_simulated_with_real_cases(exec_id=i, 
+                                                                      clear_db=True, 
+                                                                      plot=False, 
+                                                                      additional_params=additional_params, 
+                                                                      save_states=False, 
+                                                                      experiment="short_headless_dengue_propagation")
+            elapsed_time = time.time() - st_time
+            logger.info(f"[*] Finished breeding site elimination budget experiment for budget {budget} in {elapsed_time//60:.2f} minutes.")
+        
+        elapsed_time = time.time() - st_time
+        logger.info(f"[*] Finished all breeding site elimination budget experiments in {elapsed_time//60:.2f} minutes.")
+
+    def budget_vaccination_experiment(self):
+        """
+        Run a vaccination experiment to evaluate the impact of different budget allocations for vaccination on dengue transmission.
+        """
+        budgets = [5000, 10000, 50000, 100000, 300000, 500000, 700000, 1000000, 5000000]
+        # A cada 150 reais -> 1 pessoa vacinada
+        people_vaccinated = [budget//150 for budget in budgets]
+        total_people = sum(self.simulation_metrics.people_block)
+
+        logger.info("[*] Clearing data from database...")
+        self.simulation_metrics.db.clear_database()
+
+        st_time = time.time()
+        for i, budget in enumerate(budgets):
+            prop = people_vaccinated[i] / total_people
+            logger.info(f"[*] Running vaccination budget experiment for budget {budget} (vaccinating {prop*100:.2f}% [~{people_vaccinated[i]} people])...")
+
+            additional_params = {
+                "vaccination_experiment": ("bool", True),
+                "prop_vaccinated": ("float", prop),
+                "vaccine_efficacy": ("float", 0.6),
+                "budget": ("int", budget),
+                "output_dir": ("str", os.path.abspath(self.output_folder))
+            }
+
+            self.simulation_metrics.compare_simulated_with_real_cases(exec_id=i, 
+                                                                      clear_db=True, 
+                                                                      plot=False, 
+                                                                      additional_params=additional_params, 
+                                                                      save_states=False, 
+                                                                      experiment="short_headless_dengue_propagation")
+            elapsed_time = time.time() - st_time
+            logger.info(f"[*] Finished vaccination budget experiment for budget {budget} in {elapsed_time//60:.2f} minutes.")
+        
+        elapsed_time = time.time() - st_time
+        logger.info(f"[*] Finished all vaccination budget experiments in {elapsed_time//60:.2f} minutes.")
+    
+    def plot_budget_experiment_results(self):
+        root = Path(self.output_folder)
+
+        rows = []
+        
+        for file in root.rglob("*.csv"):
+            intervention = file.parent.name
+            budget = int(file.stem.split("_")[1])
+            df = pd.read_csv(file)
+            total_cases = sum(df["infected_people"])
+            rows.append(
+                {
+                    "intervention": intervention,
+                    "budget": budget,
+                    "total_cases": total_cases,
+                    "file": file.name
+                }
+            )
+
+        results = pd.DataFrame(rows)
+
+        print(results.head())
+        summary = (
+            results
+            .groupby(["intervention", "budget"])
+            .agg(
+                mean_cases=("total_cases", "mean"),
+                std_cases=("total_cases", "std"),
+                n=("total_cases", "count")
+            )
+            .reset_index()
+        )
+        
+        plt.figure(figsize=(10,6))
+
+        for intervention, group in summary.groupby("intervention"):
+
+            group = group.sort_values("budget")
+
+            plt.plot(
+                group["budget"],
+                group["mean_cases"],
+                marker="o",
+                label=intervention
+            )
+
+        plt.xlabel("Budget")
+        plt.ylabel("Número médio de casos")
+        plt.title("Budget × Casos médios")
+        plt.legend()
+        plt.grid(True)
+
+        plt.savefig(root / "budget_experiment_results.pdf")

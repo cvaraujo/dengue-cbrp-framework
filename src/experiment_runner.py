@@ -26,6 +26,16 @@ class ExperimentRunner:
             self.run_parameters_tuning_experiment()
         elif self.config.experiment == "comparison_real_simulated":
             self.run_comparison_real_simulated()
+        elif self.config.experiment == "budget_nebulization_experiment":
+            self.run_budget_nebulization_experiment()
+        elif self.config.experiment == "budget_breeding_elimination_experiment":
+            self.run_budget_breeding_elimination_experiment()
+        elif self.config.experiment == "budget_vaccination_experiment":
+            self.run_budget_vaccination_experiment()
+        elif self.config.experiment == "plot_budget_experiment_results":
+            self.plot_budget_experiment_results()
+        elif self.config.experiment == "all_budget_experiments":
+            self.run_all_budget_experiments()
         else:
             raise ValueError(f"Unknown experiment: {self.config.experiment}")
 
@@ -74,7 +84,7 @@ class ExperimentRunner:
         experiments.vaccine_experiment()
 
     def run_parameters_tuning_experiment(self) -> None:
-        output_folder = self._make_output_path("parameters_tuning")
+        output_folder = self._make_output_path("sbpo-parameters-tuning")
 
         logger.info(f"[*] Output folder: {output_folder}")
 
@@ -116,3 +126,88 @@ class ExperimentRunner:
         logger.info(f"[*] Comparing simulated with real cases for date {self.config.start_date}...")
         sim_metrics.compare_simulated_with_real_cases(exec_id=0, clear_db=True, plot=False)
         sim_metrics.plot_min_max_avg_real(exec_id=0)
+
+    def run_budget_nebulization_experiment(self):
+        """
+        Run a nebulization experiment to evaluate the impact of different budget allocations for nebulization on dengue transmission.
+        """
+        output_folder = self._make_output_path(f"budget_experiment/nebulization/")
+        logger.info(f"[*] Output folder: {output_folder}")
+
+        experiments = Experiments(
+            output_folder,
+            self.config.region,
+            self.config.map_size,
+            self.config.start_date,
+            *self.parameters,
+            simulation_identifier=self.simulation_identifier,
+            max_cycles=self.config.max_cycles,
+            plot_language=self.config.plot_language,
+        )
+
+        logger.info("[*] Running nebulization budget experiment...")
+        experiments.budget_nebulization_experiment()
+    
+    def run_budget_breeding_elimination_experiment(self):
+        """
+        Run a breeding site elimination experiment to evaluate the impact of different budget allocations for breeding site elimination on dengue transmission.
+        """
+        output_folder = self._make_output_path(f"budget_experiment/bs_elimination/")
+        logger.info(f"[*] Output folder: {output_folder}")
+
+        experiments = Experiments(
+            output_folder,
+            self.config.region,
+            self.config.map_size,
+            self.config.start_date,
+            *self.parameters,
+            simulation_identifier=self.simulation_identifier,
+            max_cycles=self.config.max_cycles,
+            plot_language=self.config.plot_language,
+        )
+
+        logger.info("[*] Running breeding site elimination budget experiment...")
+        experiments.budget_breeding_elimination_experiment()
+
+    def run_budget_vaccination_experiment(self):
+        """
+        Run a vaccination experiment to evaluate the impact of different budget allocations for vaccination on dengue transmission.
+        """
+        output_folder = self._make_output_path(f"budget_experiment/vaccination/")
+        logger.info(f"[*] Output folder: {output_folder}")
+
+        experiments = Experiments(
+            output_folder,
+            self.config.region,
+            self.config.map_size,
+            self.config.start_date,
+            *self.parameters,
+            simulation_identifier=self.simulation_identifier,
+            max_cycles=self.config.max_cycles,
+            plot_language=self.config.plot_language,
+        )
+
+        logger.info("[*] Running vaccination budget experiment...")
+        experiments.budget_vaccination_experiment()
+    
+    def plot_budget_experiment_results(self):        
+        output_folder = self._make_output_path("budget_experiment/")
+        logger.info(f"[*] Output folder: {output_folder}")
+
+        experiments = Experiments(
+            output_folder,
+            self.config.region,
+            self.config.map_size,
+            self.config.start_date,
+            *self.parameters,
+            simulation_identifier=self.simulation_identifier,
+            max_cycles=self.config.max_cycles,
+            plot_language=self.config.plot_language,
+        )
+        experiments.plot_budget_experiment_results()
+    
+    def run_all_budget_experiments(self):
+        self.run_budget_nebulization_experiment()
+        self.run_budget_breeding_elimination_experiment()
+        self.run_budget_vaccination_experiment()
+        self.plot_budget_experiment_results()
