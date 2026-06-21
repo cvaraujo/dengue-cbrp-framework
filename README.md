@@ -1,14 +1,3 @@
-# Dengue CBRP Framework
-
-A framework for **dengue vector-control research** that couples:
-
-1. A **multi-agent simulation (MABS)** of dengue spread, written in [GAMA](https://gama-platform.org/) (`dengue_propagation.gaml`);
-2. A **C++ optimizer** (`cbrp-simheur`) that solves the routing problem for fumigation teams (CBRP — *City Block Routing Problem*);
-3. A **Python orchestration layer** that ties the two together into a **simheuristic** (simulation-guided optimization) and also lets you run the simulation alone to validate it against real cases.
-
-> [!IMPORTANT]
-> Repository under active development. See the paper (WIP): https://www.ic.unicamp.br/~ra230261/
-
 ---
 
 ## Table of contents
