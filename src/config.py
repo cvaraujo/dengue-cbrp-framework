@@ -150,6 +150,14 @@ def _parse_optional_int(value: Any) -> Optional[int]:
 
 
 def get_populational_parameters(region: str) -> Tuple[float, float, int, float, float]:
+    """Retorna os parâmetros populacionais para uma região específica.
+    
+    Os parâmetros são:
+    - people_per_m2: Densidade de pessoas por metro quadrado.
+    - mosquitoes_per_person: Número de mosquitos por pessoa.
+    - nb_breeding_sites: Número de locais de reprodução por área.
+    - proportion_infected_mosquitoes_without_cases: Proporção de mosquitos infectados sem casos humanos reportados.
+    - proportion_infected_mosquitoes_with_cases: Proporção de mosquitos infectados com casos humanos reportados."""
     if region == "Alto Santo, Ceará, Brasil":
         return 0.01, 1.0, 50, 0.05, 0.4
 

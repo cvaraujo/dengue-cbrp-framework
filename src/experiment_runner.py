@@ -36,6 +36,14 @@ class ExperimentRunner:
             self.plot_budget_experiment_results()
         elif self.config.experiment == "all_budget_experiments":
             self.run_all_budget_experiments()
+        elif self.config.experiment == "wolbachia_strains_experiment":
+            self.run_wolbachia_strains_experiments()
+        elif self.config.experiment == "wolbachia_release_prop_experiment":
+            self.run_wolbachia_release_prop_experiments()
+        elif self.config.experiment == "wolbachia_release_strategies_experiment":
+            self.run_wolbachia_release_strategies_experiments()
+        elif self.config.experiment == "wolbachia_experiment":
+            self.run_wolbachia_experiment()
         else:
             raise ValueError(f"Unknown experiment: {self.config.experiment}")
 
@@ -211,3 +219,75 @@ class ExperimentRunner:
         self.run_budget_breeding_elimination_experiment()
         self.run_budget_vaccination_experiment()
         self.plot_budget_experiment_results()
+
+    def run_wolbachia_strains_experiments(self):
+        output_folder = self._make_output_path("wolbachia_strains/")
+        logger.info(f"[*] Output folder: {output_folder}")
+
+        experiments = Experiments(
+            output_folder,
+            self.config.region,
+            self.config.map_size,
+            self.config.start_date,
+            *self.parameters,
+            simulation_identifier=self.simulation_identifier,
+            max_cycles=self.config.max_cycles,
+            plot_language=self.config.plot_language,
+        )
+
+        logger.info("[*] Running Wolbachia strains experiment...")
+        experiments.wolbachia_strains_experiment()
+    
+    def run_wolbachia_release_prop_experiments(self):
+        output_folder = self._make_output_path("wolbachia_release_prop/")
+        logger.info(f"[*] Output folder: {output_folder}")
+
+        experiments = Experiments(
+            output_folder,
+            self.config.region,
+            self.config.map_size,
+            self.config.start_date,
+            *self.parameters,
+            simulation_identifier=self.simulation_identifier,
+            max_cycles=self.config.max_cycles,
+            plot_language=self.config.plot_language,
+        )
+
+        logger.info("[*] Running Wolbachia release proportion experiment...")
+        experiments.wolbachia_prop_release()
+
+    def run_wolbachia_release_strategies_experiments(self):
+        output_folder = self._make_output_path("wolbachia_release_strategies/")
+        logger.info(f"[*] Output folder: {output_folder}")
+
+        experiments = Experiments(
+            output_folder,
+            self.config.region,
+            self.config.map_size,
+            self.config.start_date,
+            *self.parameters,
+            simulation_identifier=self.simulation_identifier,
+            max_cycles=self.config.max_cycles,
+            plot_language=self.config.plot_language,
+        )
+
+        logger.info("[*] Running Wolbachia release strategies experiment...")
+        experiments.wolbachia_release_strategies()
+
+    def run_wolbachia_experiment(self):
+        output_folder = self._make_output_path("wolbachia_experiment/")
+        logger.info(f"[*] Output folder: {output_folder}")
+
+        experiments = Experiments(
+            output_folder,
+            self.config.region,
+            self.config.map_size,
+            self.config.start_date,
+            *self.parameters,
+            simulation_identifier=self.simulation_identifier,
+            max_cycles=self.config.max_cycles,
+            plot_language=self.config.plot_language,
+        )
+
+        logger.info("[*] Running Wolbachia experiment...")
+        experiments.wolbachia_experiment()

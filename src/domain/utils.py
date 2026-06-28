@@ -499,6 +499,8 @@ def get_plot_translations(language: str):
             "vaccination_impact_title": "Impacto da vacinação na curva epidêmica de {city} (Eficácia de {efficacy}%)",
             "week_column": "Semana",
             "accumulated_reduction": "Redução Acumulada (%)",
+            "wolbachia_strains_title": "Fixação de diferentes cepas de Wolbachia com lançamento inicial de 50%",
+            "wolbachia_experiment": "Curva epidêmica com e sem a intervenção pelo método Wolbachia"
         },
         "en": {
             "real_cases": "Real Cases",
@@ -514,6 +516,8 @@ def get_plot_translations(language: str):
             "vaccination_impact_title": "Vaccination impact on epidemic curve for {city} (Efficacy {efficacy}%)",
             "week_column": "Week",
             "accumulated_reduction": "Accumulated Reduction (%)",
+            "wolbachia_strains_title": "Fixation of Different Wolbachia Strains with Initial Release of 50%",
+            "wolbachia_experiment": "Epidemic Curve with and without Wolbachia Intervention"
         },
     }
     return translations.get(language, translations["pt"])

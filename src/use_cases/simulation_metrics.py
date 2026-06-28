@@ -373,7 +373,8 @@ class SimulationMetrics:
         n_execs: int,
         execs_ids: list,
         style: dict,
-        title:str
+        title:str,
+        plot_real: bool = True
     ):
 
         all_weeks = []
@@ -452,43 +453,45 @@ class SimulationMetrics:
             all_weeks.append(weeks)
             all_avg_y.append(avg_y)
 
-        logger.info("[*] Processing real notifications to plot...")
-        
-        start_datetime = datetime.strptime(self.start_date, "%Y-%m-%d")
-        prev_date = start_datetime - timedelta(days=6)
-        df_real = self.db.get_notifications_between_dates(
-            prev_date.strftime("%Y-%m-%d"), max_sim_date, self.city_key
-        )
-        df_real = df_real[
-            (df_real["classification"] != 5)
-            & df_real.apply(
-                lambda row: any(
-                    poly.contains(Point(row["x"], row["y"])) for poly in self.coord_blocks
-                ),
-                axis=1,
+        if plot_real:
+            logger.info("[*] Processing real notifications to plot...")
+            
+            start_datetime = datetime.strptime(self.start_date, "%Y-%m-%d")
+            prev_date = start_datetime - timedelta(days=6)
+            df_real = self.db.get_notifications_between_dates(
+                prev_date.strftime("%Y-%m-%d"), max_sim_date, self.city_key
             )
-        ][["data_notification"]]
+            df_real = df_real[
+                (df_real["classification"] != 5)
+                & df_real.apply(
+                    lambda row: any(
+                        poly.contains(Point(row["x"], row["y"])) for poly in self.coord_blocks
+                    ),
+                    axis=1,
+                )
+            ][["data_notification"]]
 
 
-        df_real["data_notification"] = pd.to_datetime(df_real["data_notification"])
-        df_real["week_str"] = df_real["data_notification"].apply(
-            lambda d: Utils.last_day_of_week(d).strftime("%Y-%m-%d")
-        )
-        df_real_grouped = df_real.groupby("week_str").size().to_dict()
-        sim_weeks = sorted(all_weeks_full)
+            df_real["data_notification"] = pd.to_datetime(df_real["data_notification"])
+            df_real["week_str"] = df_real["data_notification"].apply(
+                lambda d: Utils.last_day_of_week(d).strftime("%Y-%m-%d")
+            )
+            df_real_grouped = df_real.groupby("week_str").size().to_dict()
+            sim_weeks = sorted(all_weeks_full)
 
-        sampled_start_infected = int(round(self.starting_num_infected * self.sample_size))
-        real_y = [sampled_start_infected]
-        for i, week in enumerate(sim_weeks[1:], start=2):
-            weekly_real = df_real_grouped.get(week, 0)
-            real_y.append(int(round(weekly_real * self.sample_size)))
+            sampled_start_infected = int(round(self.starting_num_infected * self.sample_size))
+            real_y = [sampled_start_infected]
+            for i, week in enumerate(sim_weeks[1:], start=2):
+                weekly_real = df_real_grouped.get(week, 0)
+                real_y.append(int(round(weekly_real * self.sample_size)))
 
         logger.info("[*] Saving figure as PDF...")
         plt.figure(figsize=(10, 6))
         for i in range(n_execs):
             plt.plot(all_weeks[i], all_avg_y[i], label=style[i]["name"], color=style[i]["color"], linestyle=style[i]["dash"])
 
-        plt.plot(all_weeks[0], real_y, label=self.plot_texts["real_cases"], marker="o", linestyle="-", color="#36454F")
+        if plot_real:
+            plt.plot(all_weeks[0], real_y, label=self.plot_texts["real_cases"], marker="o", linestyle="-", color="#36454F")
             
         plt.title(title)
         plt.xlabel(self.plot_texts["week"])

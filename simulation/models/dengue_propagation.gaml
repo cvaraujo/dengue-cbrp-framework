@@ -102,29 +102,33 @@ global {
 	// Speed
 	float mosquitoes_min_speed <- 1.5 #km / #h;
 	float mosquitoes_max_speed <- 2.5 #km / #h;
+	float max_move_radius <- 100.0 #m;
 	
-	// Probabilities
+	// Epidemiological
 	float mosquitoes_daily_rate_of_bites <- 0.168;
 	float mosquitoes_frac_infectious_bites <- 0.6;
 	float mosquitoes_daily_latency_rate	<- 0.143;
 	float mosquitoes_susceptibility_to_dengue <- 0.526;
 	float mosquitoes_death_rate <- 0.01;
 	float mosquitoes_oviposition_rate <- 0.02;
-	
-	// Movement
 	float mosquitoes_move_probability <- 0.8;
-	// Oviposition capacity
 	int mosquitoes_max_carrying_capacity <- 3;
-	// Max move distance
-	float max_move_radius <- 100.0 #m;
-	
-	// ----------------------------------------------------------
-	// ------------- Breeding site global parameters ------------
-	// ----------------------------------------------------------
-		
-	// Breeding Sites global parameters
+	float mosquitoes_maturation_rate <- 0.1;
 	float bs_eggs_to_mosquitoes <- 0.125;
 	float bs_aquatic_phase_mortality_rate <- 0.066;
+	
+	//Wolbachia multipliers
+	float w_mosquitoes_susceptibility_to_dengue <- 0.5;
+	float w_mosquitoes_daily_latency_rate <- 0.8;
+	float w_mosquitoes_daily_rate_of_bites <- 0.95;
+	float w_mosquitoes_death_rate <- 1.2;
+	float w_mosquitoes_oviposition_rate <- 0.8;
+	float w_mosquitoes_maturation_rate <- 0.95;
+	float w_bs_eggs_to_mosquitoes <- 0.7;
+
+	int bs_capacity <- 500;	
+	
+	
 	
 	// ----------------------------------------------------------
 	// --------------- Logistics global parameters --------------
@@ -148,9 +152,16 @@ global {
 	bool parameters_experiment <- false;
 	bool mosquitoes_experiment <- false;
 	
+	bool wolbachia_experiment <- true;
+	float wolbachia_release_prop <- 0.3;
+	int wolbachia_release_strategy <- 0; // 0 - inicio, 1 - mensal, 2 - qnd há pico
+	bool release_completed <- false;
+	int wolbachia_release_nb <- 10000;
+	
 	float simulation_seed <- 0.0;
 	float elapsed_days <- 0.0;
-	int weekday <- 0;
+	int weekday <- 1;
+	int monthday <- 1;
 	int total_infections <- 0;
 	
 //	int new_mosquitoes <- 0;	
@@ -191,18 +202,48 @@ global {
 		elapsed_days <- ((current_date - starting_date)/86400);				
 		
 		if(current_date.hour = 5 and current_date != starting_date){
-			if(weekday = 7){
+			if weekday = 7 {
+				// nebulizar
+				weekday <- 0;
 			} 
 			
-			weekday <- weekday + 1;			
+			if monthday = 30 {
+				monthday <- 0;
+			}
+			
+			weekday <- weekday + 1;	
+			monthday <- monthday + 1;		
 		}
 		
+		int wolbachia_mosquitoes <- Mosquitoes count(each.wolbachia);
+		int savage_mosquitoes <- length(Mosquitoes) - wolbachia_mosquitoes;
+		int wolbachia_eggs <- Eggs count(each.wolbachia);
+		
+		//write "wolbachia count: " + wolbachia_mosqutoes + ", savage count: " + savage_mosquitoes + ", wolbachia eggs count: " + wolbachia_eggs;
+		
 		//write "now is " + current_date;
-		//write "its been " + elapsed_days + " days, today is weekday " + weekday;
+		//write "its been " + elapsed_days + " days, today is weekday " + weekday + " and monthday " + monthday;
 		//write ""+ People count ((each.state = 1) and (each.start_infected = false)) + " are infected";
 		//if(cycle > 0){
 		//	write "" + cycle_infected_people[cycle-1] + " were infected last cycle.";			
 		//}
+	}
+	
+	reflex release_wolbachia when: wolbachia_experiment and wolbachia_release_strategy != 0{
+		if wolbachia_release_strategy = 1 {
+			if monthday = 1 and current_date.hour = 5 {
+				write "First day of the month. Releasing wolbachia!";
+				do create_wolbachia;
+			}
+		} else{
+			int curr_infected <- People count(each.state = 1);	
+			int total_people <- length(People);
+			if (curr_infected/total_people) >= 0.001 and not release_completed{
+				write "There are > 0,1% infected people (outbreak starting). Releasing wolbachia.";
+				do create_wolbachia;
+				release_completed <- true;
+			} 			
+		}
 	}
 	
 	reflex nebulize_critical_blocks when: (nebulizer_experiment and cycle = 2) {
@@ -306,6 +347,37 @@ global {
 		//write "" + total_infections + " were infected in total";
 	}
 	
+	action create_wolbachia {
+		int nb_wild_mosquitoes <- Mosquitoes count(!each.wolbachia);
+		int nb_mosquitoes_wolbachia <- 0;
+		
+		if wolbachia_release_strategy = 0 {
+			nb_mosquitoes_wolbachia <- 
+				wolbachia_release_prop < 1.0 ?
+				int(round((wolbachia_release_prop / (1.0 - wolbachia_release_prop)) * nb_wild_mosquitoes)) :
+				nb_wild_mosquitoes;			
+		} else {
+			nb_mosquitoes_wolbachia <- wolbachia_release_nb;
+		}
+			
+		loop i from: 1 to: nb_mosquitoes_wolbachia {
+			create Mosquitoes {
+				name <- "mosquitoes" + string(id);
+				speed <- rnd(mosquitoes_min_speed, mosquitoes_max_speed) #km / #h;
+				breeding_site <- one_of(BreedingSites);
+				current_building <- one_of(breeding_site.buildings);
+				location <- any_location_in(current_building);
+				state <- 0;
+				wolbachia <- true;
+			}
+		}
+		
+		write "created " + nb_mosquitoes_wolbachia + " wolbachia mosquitoes.";
+		write "wild: " + (Mosquitoes count(!each.wolbachia));
+		write "wolbachia: " + (Mosquitoes count(each.wolbachia));
+		write "prop: " + ((Mosquitoes count(each.wolbachia)) / length(Mosquitoes));
+	}
+	
 	action log_parameters{
 		write "";
 		write "==================================================";
@@ -329,7 +401,25 @@ global {
 		write "max_move_radius: " + max_move_radius;
 		write "bs_eggs_to_mosquitoes: " + bs_eggs_to_mosquitoes;
 		write "bs_aquatic_phase_mortality_rate: " + bs_aquatic_phase_mortality_rate;
-	
+		write "mosquitoes_maturation_rate: " + mosquitoes_maturation_rate;
+		
+		// ----------------------------------------------------------
+		// Wolbachia
+		// ----------------------------------------------------------
+		
+		if wolbachia_experiment{
+			write "w_mosquitoes_daily_rate_of_bites: " + w_mosquitoes_daily_rate_of_bites*mosquitoes_daily_rate_of_bites;
+			write "w_mosquitoes_daily_latency_rate: " + w_mosquitoes_daily_latency_rate*mosquitoes_daily_latency_rate;
+			write "w_mosquitoes_susceptibility_to_dengue: " + w_mosquitoes_susceptibility_to_dengue*mosquitoes_susceptibility_to_dengue;
+			write "w_mosquitoes_death_rate: " + w_mosquitoes_death_rate*mosquitoes_death_rate;
+			write "w_mosquitoes_oviposition_rate: " + w_mosquitoes_oviposition_rate*mosquitoes_oviposition_rate;
+			write "w_mosquitoes_maturation_rate: " + w_mosquitoes_maturation_rate*mosquitoes_maturation_rate;
+			write "w_bs_eggs_to_mosquitoes: " + w_bs_eggs_to_mosquitoes*bs_eggs_to_mosquitoes;
+			write "bs capacity: " + bs_capacity;
+			write "release strategy: " + wolbachia_release_strategy;
+			write "wolbachia_release_prop: " + wolbachia_release_prop;
+			write "wolbachia_release_nb: " + wolbachia_release_nb;
+		} 
 	
 		// ----------------------------------------------------------
 		// Experiments
@@ -342,6 +432,7 @@ global {
 		write "nebulizer_experiment: " + nebulizer_experiment;
 		write "vaccination_experiment: " + vaccination_experiment;
 		write "bs_elimination_experiment: " + bs_elimination_experiment;
+		write "wolbachia_experiment: " + wolbachia_experiment;
 		
 		// ----------------------------------------------------------
 		// Logistics
@@ -357,6 +448,7 @@ global {
 		
 		write "nb_blocks_bs_elimination: " + nb_blocks_bs_elimination;
 		write "budget: " + budget;
+					
 		
 		write "";
 		write "----- RANDOM-----";
@@ -688,8 +780,10 @@ global {
 					current_building <- load_building != -1 ? one_of(Buildings where (each.id = load_building)) : one_of(Buildings);
 					breeding_site <- load_bs != -1 ? one_of(BreedingSites where (each.id = load_bs)) : one_of(BreedingSites);
 					location <- (load_x != -1.0 and load_y != -1.0) ? point(load_x, load_y) : any_location_in(current_building);
+					wolbachia <- false;
 				}
 			}
+
 			
 			// ----------------------------------------------------------
 			list<list> eggs <- self.select(
@@ -706,11 +800,19 @@ global {
 					
 				}
 			}
+		}		
+		
+			
+		if wolbachia_experiment and wolbachia_release_strategy = 0 {				
+			do create_wolbachia;
 		}
 		
+		int n_wolbachia <- Mosquitoes count(each.wolbachia);
 		write "size people: " + length(People);
 		write "size mosquitoes: " + length(Mosquitoes);
 		write "size bs: " + length(BreedingSites);
+		write "nb wolbachia: "+ n_wolbachia; 
+		write "release prop: "+ (n_wolbachia / length(Mosquitoes)); 
 		
 		/*if fill_data {
 			write "[!] Fill Data in Start Scenario...";	
@@ -789,15 +891,24 @@ species Eggs {
 	// Deposited day
 	float deposited_days <- 0.0;
 	date deposited_date <- current_date;
+	bool wolbachia <- false;
 	
 	reflex turn_mosquito when: every(cycle) {
-		if flip(bs_eggs_to_mosquitoes) {
+		float proba;
+		if wolbachia and wolbachia_experiment{
+			proba <- (w_bs_eggs_to_mosquitoes*bs_eggs_to_mosquitoes) * (w_mosquitoes_maturation_rate * mosquitoes_maturation_rate);
+		} else {
+			proba <- bs_eggs_to_mosquitoes * mosquitoes_maturation_rate;
+		}
+		
+		if flip(proba) {
 			// Create a new mosquito
 			create Mosquitoes {
 				breeding_site <- myself.breeding_site;
 				current_building <- one_of(breeding_site.buildings);
 				location <- any_location_in(current_building);
 				state <- 0; 
+				wolbachia <- myself.wolbachia;
 			}
 			breeding_site.eggs <- breeding_site.eggs - 1;
 			//new_mosquitoes <- new_mosquitoes + 1;
@@ -828,6 +939,7 @@ species BreedingSites {
 	list<Buildings> buildings;
 	// Eggs to crete the species
 	int new_eggs <- 0;
+	bool wolbachia_eggs <- false;
 	
 	init {
 		// Update ID and count of species
@@ -837,12 +949,19 @@ species BreedingSites {
 		}
 	}
 	
-	reflex create_new_eggs when: new_eggs > 0 {
-		eggs <- eggs + new_eggs;
-		create Eggs number: new_eggs {
-			breeding_site <- myself;
-		}
-		new_eggs <- 0;
+	reflex create_new_eggs when: (new_eggs > 0) {
+		loop while: new_eggs > 0 and (eggs <= bs_capacity or not wolbachia_experiment){		
+			eggs <- eggs + 1;
+			create Eggs {
+				breeding_site <- myself;
+				wolbachia <- myself.wolbachia_eggs;
+			}
+			new_eggs <- new_eggs - 1;
+		} 
+		wolbachia_eggs <- false;			
+		if eggs <= bs_capacity or not wolbachia_experiment{
+			//write "Breeding site max capacity reached!";
+		} 
 	}
 	
 	aspect default {
@@ -900,13 +1019,17 @@ species People skills: [moving]{
 	
 	// Reflex to change the state of the agent to infected
 	reflex change_to_infected_state when: state = 0 {
-		float proba <- 1 - (1 - mosquitoes_daily_rate_of_bites * mosquitoes_susceptibility_to_dengue);
+		float proba <- 1 - (1 - mosquitoes_daily_rate_of_bites * mosquitoes_frac_infectious_bites);
 		if self.vaccinated and vaccination_experiment {
 			proba <- proba * (1 - vaccine_efficacy);
 			//write "Person vaccinated, prob of infection: " + proba;
 		}
 		ask Mosquitoes at_distance(1 #m) {
 			// Check the mosquitoes state
+			if wolbachia and wolbachia_experiment{
+				proba <- 1 - (1 - (w_mosquitoes_daily_rate_of_bites * mosquitoes_daily_rate_of_bites) * (w_mosquitoes_daily_rate_of_bites * mosquitoes_frac_infectious_bites));
+			}
+			
 			if state = 2 and flip(proba){
 				myself.state <- 1;
 				//write "infected person";
@@ -962,6 +1085,7 @@ species Mosquitoes skills: [moving] {
 	Buildings current_building;
 	//
 	date date_of_birth <- current_date;
+	bool wolbachia <- false;
 	
 	init {
 		if id = -1 {
@@ -990,7 +1114,13 @@ species Mosquitoes skills: [moving] {
 	
 	// Reflex to change the state of the agent to exposed
 	reflex change_to_exposed_state when: state = 0 {
-		float proba <- 1 - (1 - mosquitoes_daily_rate_of_bites * mosquitoes_susceptibility_to_dengue);
+		float proba;
+		if wolbachia and wolbachia_experiment{
+			proba <- 1 - (1 - (mosquitoes_daily_rate_of_bites * w_mosquitoes_daily_rate_of_bites) * (w_mosquitoes_susceptibility_to_dengue * mosquitoes_susceptibility_to_dengue));
+		} else {			
+			 proba <- 1 - (1 - mosquitoes_daily_rate_of_bites * mosquitoes_susceptibility_to_dengue);
+		}
+		
 		ask People at_distance(1 #m) {
 			// Check the people state
 			if state = 1 and flip(proba){
@@ -1000,27 +1130,54 @@ species Mosquitoes skills: [moving] {
 	}
 	
 	// Reflex to change the state of the agent to infected
-	reflex change_to_infected_state when: state = 1 and flip(mosquitoes_daily_latency_rate) {
-		state <- 2;
+	reflex change_to_infected_state when: state = 1 {
+		float proba <- mosquitoes_daily_latency_rate;
+		
+		if wolbachia and wolbachia_experiment {
+			proba <- proba * w_mosquitoes_daily_latency_rate;
+		}
+		
+		if flip(proba){
+			state <- 2;
+		}
 	}
 	
-	reflex die when: flip(mosquitoes_death_rate) {
-		//dead_mosquitoes <- dead_mosquitoes + 1;
-		do die;
+	reflex die {
+		float proba <- mosquitoes_death_rate;
+		
+		if wolbachia and wolbachia_experiment {
+			proba <- proba * w_mosquitoes_death_rate;
+		}
+		
+		if flip(proba){
+			//dead_mosquitoes <- dead_mosquitoes + 1;
+			do die;			
+		}
 	}
 	
 	// Reflex to generate a new offspring
-	reflex oviposition when: flip(mosquitoes_oviposition_rate){
-		BreedingSites potential_bs <- BreedingSites at_distance(min_distance_to_oviposition #m) closest_to(self);
-		if potential_bs != nil {
-			potential_bs.new_eggs <- rnd(1, mosquitoes_max_carrying_capacity);
+	reflex oviposition{
+		float proba <- mosquitoes_oviposition_rate;
+		
+		if wolbachia and wolbachia_experiment {
+			proba <- proba * w_mosquitoes_oviposition_rate;
+		}
+		
+		if flip(proba){
+			BreedingSites potential_bs <- BreedingSites at_distance(min_distance_to_oviposition #m) closest_to(self);
+			if potential_bs != nil {
+				potential_bs.new_eggs <- rnd(1, mosquitoes_max_carrying_capacity);
+				potential_bs.wolbachia_eggs <- wolbachia;
+			}			
 		}
 	}
 	
 	aspect default {
 		int mosquito_size <- 2;
 		
-		if state = 0 {
+		if wolbachia {
+			draw circle(mosquito_size) color: #purple;
+		} else if state = 0 {
 			draw circle(mosquito_size) color: #yellow;
 		} else if state = 1 {
 			draw circle(mosquito_size) color: #orange;
@@ -1140,8 +1297,7 @@ species Saver skills: [SQLSKILL] {
 		do executeUpdate(
 			params: POSTGRES,
 			updateComm: query_metrics
-		);
-		
+		);	
 		
 	}
 	
@@ -1211,6 +1367,36 @@ species Saver skills: [SQLSKILL] {
 	    format: csv
 	    header: true;
 	}
+	
+	reflex save_wolbachia_results when: wolbachia_experiment and run_batch {
+		list<string> simulation_id <- simulation_name split_with ' ';
+		scenario_id <- int(simulation_id[1]) + 1;
+		int infected_people <- 0;
+		int wolbachia_mosquitoes <- Mosquitoes count(each.wolbachia);
+		int savage_mosquitoes <- length(Mosquitoes) - wolbachia_mosquitoes;
+		
+		write "wolbachia count: " + wolbachia_mosquitoes + ", savage count: " + savage_mosquitoes;
+
+		ask People {
+			if self.state = 1 and self.start_infected = false {
+				infected_people <- infected_people + 1;
+				self.start_infected <- true;	
+			}
+		}
+	    
+	    save [
+	    	execution_id,
+			scenario_id,
+			cycle,
+			infected_people,
+			wolbachia_mosquitoes,
+			savage_mosquitoes
+	    ]
+	    to: output_dir + "/run_"+ execution_id  + "_" + scenario_id + ".csv"
+		rewrite: false
+	    format: csv
+	    header: true;
+	}
 }
 
 
@@ -1245,6 +1431,19 @@ experiment dengue_propagation type: gui until: (cycle >= max_cycles and end_simu
 	parameter "Egg daily probability of turning into mosquito" var:bs_eggs_to_mosquitoes category: "float" init: 1.0;
 	parameter "Simulation seed" var:simulation_seed category:"float" init:0.0;
 	parameter "Mosquitoes move probability" var: mosquitoes_move_probability category: "float" init: 0.58789632;
+	//WOLBACHIA
+	parameter "Wolbachia mosquitoes oviposition" var: w_mosquitoes_oviposition_rate category: "float";
+	parameter "Wolbachia mosquitoes death rate" var: w_mosquitoes_death_rate category: "float";
+	parameter "Wolbachia mosquitoes suscep to dengue" var: w_mosquitoes_susceptibility_to_dengue category: "float";
+	parameter "Wolbachia mosquitoes daily latency" var: w_mosquitoes_daily_latency_rate category: "float";
+	parameter "Wolbachia mosquitoes maturation rate" var: w_mosquitoes_maturation_rate category: "float";
+	parameter "Wolbachia mosquitoes daily rate of bites" var: w_mosquitoes_daily_rate_of_bites category: "float";
+	parameter "Wolbachia mosquitoes daily probability of turning into mosquito" var: w_bs_eggs_to_mosquitoes category: "float";
+
+	parameter "BS Capacity" var: bs_capacity category: "int";
+	parameter "Wolbachia experiment" var: wolbachia_experiment category: "bool";
+	parameter "Wolbachia release prop" var:  wolbachia_release_prop category: "float";
+	parameter "Wolbachia release strategy" var:wolbachia_release_strategy category: "float";
 	//	
 	parameter "Nebulizer Efficiency" var: nebulizer_efficiency category: "float" init: 0.8;
 	parameter "Number of blocks to nebulize" var: nb_blocks_nebulize category: "int";
@@ -1259,12 +1458,12 @@ experiment dengue_propagation type: gui until: (cycle >= max_cycles and end_simu
 	
 	output {
 		display city type: opengl {
-			species People;
-			species Mosquitoes;
-			species BreedingSites;
+//			species People;
+//			species Mosquitoes;
+//			species BreedingSites;
 			species Roads;
 			species Vertices;
-			//species Buildings transparency: 0.7;
+			species Buildings transparency: 0.7;
 		}
 //		display Charts refresh: cycle < 60 axes: true {		
 //			chart "Humans" type: series background: #white position: {0,0} style: exploded x_label: "Days" {
@@ -1282,7 +1481,7 @@ experiment dengue_propagation type: gui until: (cycle >= max_cycles and end_simu
 	}
 }
 
-experiment long_headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 40  parallel: true {
+experiment long_headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 50  parallel: true {
 	//
 	parameter "Type of execution" var: run_batch category: "bool" init: true;
 	parameter "Start Date" var: start_date_str category: "string" init: "2020-05-08";
@@ -1310,6 +1509,18 @@ experiment long_headless_dengue_propagation type: batch keep_seed: true until: (
 	parameter "Mosquitoes death rate" var: mosquitoes_death_rate category: "float" init: 0.01;
 	parameter "Mosquito daily mortality rate in aquatic phase" var:bs_aquatic_phase_mortality_rate category: "float" init: 0.066;
 	parameter "Simulation seed" var:simulation_seed category:"float" init:0.0;
+	//WOLBACHIA
+	parameter "Wolbachia mosquitoes oviposition" var: w_mosquitoes_oviposition_rate category: "float";
+	parameter "Wolbachia mosquitoes death rate" var: w_mosquitoes_death_rate category: "float";
+	parameter "Wolbachia mosquitoes suscep to dengue" var: w_mosquitoes_susceptibility_to_dengue category: "float";
+	parameter "Wolbachia mosquitoes daily latency" var: w_mosquitoes_daily_latency_rate category: "float";
+	parameter "Wolbachia mosquitoes maturation rate" var: w_mosquitoes_maturation_rate category: "float";
+	parameter "Wolbachia mosquitoes daily rate of bites" var: w_mosquitoes_daily_rate_of_bites category: "float";
+	parameter "Wolbachia mosquitoes daily probability of turning into mosquito" var: w_bs_eggs_to_mosquitoes category: "float";
+	parameter "BS Capacity" var: bs_capacity category: "int";
+	parameter "Wolbachia experiment" var: wolbachia_experiment category: "bool";
+	parameter "Wolbachia release prop" var:  wolbachia_release_prop category: "float";
+	parameter "Wolbachia release strategy" var:wolbachia_release_strategy category: "float";
 	//	
 	parameter "Nebulizer Efficiency" var: nebulizer_efficiency category: "float" init: 0.8;
 	parameter "Number of blocks to nebulize" var: nb_blocks_nebulize category: "int";
@@ -1325,7 +1536,7 @@ experiment long_headless_dengue_propagation type: batch keep_seed: true until: (
 	parameter "Containment budget" var: budget category: "int";
 }
 
-experiment short_headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 12 {
+experiment short_headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 20 {
 	//
 	parameter "Type of execution" var: run_batch category: "bool" init: true;
 	parameter "Start Date" var: start_date_str category: "string" init: "2020-05-08";
@@ -1353,6 +1564,18 @@ experiment short_headless_dengue_propagation type: batch keep_seed: true until: 
 	parameter "Mosquitoes death rate" var: mosquitoes_death_rate category: "float" init: 0.01;
 	parameter "Mosquito daily mortality rate in aquatic phase" var:bs_aquatic_phase_mortality_rate category: "float" init: 0.066;
 	parameter "Simulation seed" var:simulation_seed category:"float" init:0.0;
+	//WOLBACHIA
+	parameter "Wolbachia mosquitoes oviposition" var: w_mosquitoes_oviposition_rate category: "float";
+	parameter "Wolbachia mosquitoes death rate" var: w_mosquitoes_death_rate category: "float";
+	parameter "Wolbachia mosquitoes suscep to dengue" var: w_mosquitoes_susceptibility_to_dengue category: "float";
+	parameter "Wolbachia mosquitoes daily latency" var: w_mosquitoes_daily_latency_rate category: "float";
+	parameter "Wolbachia mosquitoes maturation rate" var: w_mosquitoes_maturation_rate category: "float";
+	parameter "Wolbachia mosquitoes daily rate of bites" var: w_mosquitoes_daily_rate_of_bites category: "float";
+	parameter "Wolbachia mosquitoes daily probability of turning into mosquito" var: w_bs_eggs_to_mosquitoes category: "float";
+	parameter "BS Capacity" var: bs_capacity category: "int";
+	parameter "Wolbachia experiment" var: wolbachia_experiment category: "bool";
+	parameter "Wolbachia release prop" var:  wolbachia_release_prop category: "float";
+	parameter "Wolbachia release strategy" var:wolbachia_release_strategy category: "float";
 	//	
 	parameter "Nebulizer Efficiency" var: nebulizer_efficiency category: "float" init: 0.8;
 	parameter "Number of blocks to nebulize" var: nb_blocks_nebulize category: "int";

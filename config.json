@@ -1,10 +1,10 @@
 {
-    "experiment": "plot_budget_experiment_results",
+    "experiment": "wolbachia_release_strategies_experiment",
     "region": "Guaratiba, Rio de Janeiro, Brasil",
     "map_size": 0,
     "start_date": "2024-01-28",
     "sample_size": 1.0,
     "max_cycles": 180,
     "output_folder": "./experiments/",
-    "plot_language": "pt"
+    "plot_language": "en"
 }

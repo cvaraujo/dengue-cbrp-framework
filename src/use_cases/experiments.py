@@ -38,12 +38,15 @@ class Experiments:
         self.simulation_identifier = simulation_identifier
         self.plot_language = plot_language
 
+        # self.budgets = [5000, 10000, 50000, 100000, 300000, 500000, 700000, 1000000, 5000000]
+        self.budgets = [1500000, 2000000, 2500000, 3000000, 3500000, 4000000]
        
         self.simulation_metrics = SimulationMetrics(output_folder=output_folder,
                                                         city=city_name,
                                                         map_size=map_size,
                                                         start_date=start_date,
                                                         people_per_m2=people_per_m2,
+                                                        max_cycles=max_cycles,
                                                         mosquitoes_per_person=mosquitoes_per_person,
                                                         nb_breeding_sites=nb_breeding_sites,
                                                         proportion_infected_mosquitoes_without_cases=proportion_infected_mosquitoes_without_cases,
@@ -61,6 +64,40 @@ class Experiments:
             "simulation_seed": ("float", 0.0)
         }
 
+
+    def _get_wolbachia_strains(self):
+        wolbachia_strains = {
+            "wMel": {
+                "w_mosquitoes_daily_rate_of_bites": ("float", 0.95),
+                "w_mosquitoes_daily_latency_rate": ("float", 0.8),
+                "w_mosquitoes_susceptibility_to_dengue": ("float", 0.3),
+                "w_mosquitoes_death_rate": ("float", 1.15),
+                "w_mosquitoes_oviposition_rate": ("float", 0.95),
+                "w_mosquitoes_maturation_rate": ("float", 0.85),
+                "w_bs_eggs_to_mosquitoes": ("float", 0.7)
+            },
+            "wAlbB": {
+                "w_mosquitoes_daily_rate_of_bites": ("float", 0.95),
+                "w_mosquitoes_daily_latency_rate": ("float", 0.8),
+                "w_mosquitoes_susceptibility_to_dengue": ("float", 0.5),
+                "w_mosquitoes_death_rate": ("float", 1.3),
+                "w_mosquitoes_oviposition_rate": ("float", 0.8),
+                "w_mosquitoes_maturation_rate": ("float", 0.95),
+                "w_bs_eggs_to_mosquitoes": ("float", 0.7)
+            },
+            "wMelPop": {
+                "w_mosquitoes_daily_rate_of_bites": ("float", 0.95),
+                "w_mosquitoes_daily_latency_rate": ("float", 0.8),
+                "w_mosquitoes_susceptibility_to_dengue": ("float", 0.0),
+                "w_mosquitoes_death_rate": ("float", 1.5),
+                "w_mosquitoes_oviposition_rate": ("float", 0.7),
+                "w_mosquitoes_maturation_rate": ("float", 0.8),
+                "w_bs_eggs_to_mosquitoes": ("float", 0.7)
+            }
+        }
+
+        return wolbachia_strains
+    
     def oviposition_experiment(self):
         """
         Run an oviposition experiment to evaluate the impact of different oviposition rates on dengue transmission.
@@ -334,15 +371,14 @@ class Experiments:
         """
         Run a nebulization experiment to evaluate the impact of different budget allocations for nebulization on dengue transmission.
         """
-        budgets = [5000, 10000, 50000, 100000, 300000, 500000, 700000, 1000000, 5000000]
         # A cada 100 reais -> 1 bloco nebulizado no inicio da simulação
-        blocks_nebulize = [budget//100 for budget in budgets]
+        blocks_nebulize = [budget//100 for budget in self.budgets]
 
         logger.info("[*] Clearing data from database...")
         self.simulation_metrics.db.clear_database()
 
         st_time = time.time()
-        for i, budget in enumerate(budgets):
+        for i, budget in enumerate(self.budgets):
             logger.info(f"[*] Running nebulization budget experiment for budget {budget} (nebulizing {blocks_nebulize[i]} blocks)...")
 
             additional_params = {
@@ -369,15 +405,14 @@ class Experiments:
         """
         Run a breeding site elimination experiment to evaluate the impact of different budget allocations for breeding site elimination on dengue transmission.
         """
-        budgets = [5000, 10000, 50000, 100000, 300000, 500000, 700000, 1000000, 5000000]
         # A cada 500 reais -> 1 agente visitando 5 blocos no inicio da simulação
-        blocks_nebulize = [(budget//500) * 5 for budget in budgets]
+        blocks_nebulize = [(budget//500) * 5 for budget in self.budgets]
 
         logger.info("[*] Clearing data from database...")
         self.simulation_metrics.db.clear_database()
 
         st_time = time.time()
-        for i, budget in enumerate(budgets):
+        for i, budget in enumerate(self.budgets):
             logger.info(f"[*] Running breeding site elimination budget experiment for budget {budget} (visiting {blocks_nebulize[i]} blocks)...")
 
             additional_params = {
@@ -403,16 +438,15 @@ class Experiments:
         """
         Run a vaccination experiment to evaluate the impact of different budget allocations for vaccination on dengue transmission.
         """
-        budgets = [5000, 10000, 50000, 100000, 300000, 500000, 700000, 1000000, 5000000]
         # A cada 150 reais -> 1 pessoa vacinada
-        people_vaccinated = [budget//150 for budget in budgets]
+        people_vaccinated = [budget//150 for budget in self.budgets]
         total_people = sum(self.simulation_metrics.people_block)
 
         logger.info("[*] Clearing data from database...")
         self.simulation_metrics.db.clear_database()
 
         st_time = time.time()
-        for i, budget in enumerate(budgets):
+        for i, budget in enumerate(self.budgets):
             prop = people_vaccinated[i] / total_people
             logger.info(f"[*] Running vaccination budget experiment for budget {budget} (vaccinating {prop*100:.2f}% [~{people_vaccinated[i]} people])...")
 
@@ -457,7 +491,8 @@ class Experiments:
 
         results = pd.DataFrame(rows)
 
-        print(results.head())
+        # print(results[results["intervention"] == "vaccination"].sort_values("budget").to_string())
+
         summary = (
             results
             .groupby(["intervention", "budget"])
@@ -469,6 +504,7 @@ class Experiments:
             .reset_index()
         )
         
+        print(summary.to_string())
         plt.figure(figsize=(10,6))
 
         for intervention, group in summary.groupby("intervention"):
@@ -488,4 +524,298 @@ class Experiments:
         plt.legend()
         plt.grid(True)
 
-        plt.savefig(root / "budget_experiment_results.pdf")
+        plt.savefig(root / "budget_experiment_results_absolute.pdf")
+
+    def wolbachia_strains_experiment(self):
+        """
+        Run a Wolbachia strains experiment to evaluate the impact of different Wolbachia strains on dengue transmission.
+        """
+        
+        strains = self._get_wolbachia_strains()
+
+        style_dict = {
+            "wMel": {"color": "red", "dash": "dashed"},
+            "wAlB": {"color": "green", "dash": "solid"},
+            "wMelPop": {"color": "blue", "dash": "dotted"},
+        }
+        
+        # for i, (strain, params) in enumerate(wolbachia_strains.items()):
+        #     logger.info(f"[*] Running Wolbachia strain experiment for strain {strain}.")
+        #     strain_output_folder = os.path.join(self.output_folder, strain)
+        #     os.makedirs(strain_output_folder, exist_ok=True)
+
+        #     additional_params = {
+        #         "wolbachia_release_prop": ("float", 0.5),
+        #         "wolbachia_experiment": ("bool", True),      
+        #         "output_dir": ("str", os.path.abspath(strain_output_folder)),        
+        #         **params
+        #     }
+
+        #     self.simulation_metrics.compare_simulated_with_real_cases(exec_id=i, 
+        #                                                               clear_db=False, 
+        #                                                               plot=False,
+        #                                                               additional_params=additional_params,
+        #                                                               save_states=False,
+        #                                                               experiment="short_headless_dengue_propagation")
+
+        root = Path(self.output_folder)
+        rows = {
+            "wMel": pd.DataFrame(),
+            "wMelPop": pd.DataFrame(),
+            "wAlB": pd.DataFrame()
+        }
+        for file in root.rglob("*.csv"):
+            strain = file.parent.name
+            df = pd.read_csv(file)
+            rows[strain] = pd.concat([rows[strain], df], ignore_index=True)
+
+        # print(rows["wMel"].head())
+
+        summary_rows = {}
+        for strain, df in rows.items():
+            summary = (
+                df
+                .groupby(["cycle"])
+                .agg(
+                    mean_wolbachia=("wolbachia_mosquitoes", "mean"),
+                    mean_savage=("savage_mosquitoes", "mean"),
+                )
+                .reset_index()
+            )
+
+            summary["fixation"] = summary["mean_wolbachia"] / (summary["mean_wolbachia"] + summary["mean_savage"])
+        
+            summary_rows[strain] = summary
+
+        plt.figure(figsize=(10,6))
+
+        for strain, summary in summary_rows.items():
+            plt.plot(
+                summary["cycle"],
+                summary["fixation"],
+                # marker="o",
+                label=strain,
+                color=style_dict[strain]["color"],
+                linestyle=style_dict[strain]["dash"] 
+            )
+
+        plt.xlabel("Cycle")
+        plt.ylabel("Fixation")
+        plt.title("Wolbachia fixation over time for different strains with 0.5 release proportion")
+        plt.legend()
+        plt.grid(True)
+
+        plt.savefig(root / "wolbachia_strains.pdf")
+
+    def wolbachia_prop_release(self):
+        """
+        Run a Wolbachia release proportion experiment to evaluate the impact of different Wolbachia release proportions.
+        """
+        release_props = [0.1, 0.3, 0.5, 0.7, 0.9]
+        strains = self._get_wolbachia_strains()
+        
+        for strain, params in strains.items():
+            for i, prop in enumerate(release_props):
+                logger.info(f"[*] Running Wolbachia release experiment for strain {strain} and prop {prop}.")
+                release_folder = os.path.join(self.output_folder, strain, f"prop_{prop}")
+                os.makedirs(release_folder, exist_ok=True)
+                additional_params = {
+                    **params,
+                    "wolbachia_release_prop": ("float", prop),
+                    "wolbachia_experiment": ("bool", True),      
+                    "output_dir": ("str", os.path.abspath(release_folder)),        
+                }
+
+                self.simulation_metrics.compare_simulated_with_real_cases(exec_id=i, 
+                                                                        clear_db=True, 
+                                                                        plot=False,
+                                                                        additional_params=additional_params,
+                                                                        save_states=False,
+                                                                        experiment="short_headless_dengue_propagation")
+            
+        rows = {
+            strain: dict() for strain in strains.keys()
+        }
+        for strain in strains.keys():
+            folder = os.path.join(self.output_folder, strain)
+            root = Path(folder)
+            for file in root.rglob("*.csv"):
+                prop = file.parent.name
+                df = pd.read_csv(file)
+                rows[strain][prop] = pd.concat([rows[strain].get(prop, pd.DataFrame()), df], ignore_index=True)
+
+        summary_rows = {
+            strain: dict() for strain in strains.keys()
+        }
+        for strain in strains.keys():
+            for prop, df in sorted(rows[strain].items(), key=lambda item: float(item[0].split("_")[-1])):
+                summary = (
+                    df
+                    .groupby(["cycle"])
+                    .agg(
+                        mean_wolbachia=("wolbachia_mosquitoes", "mean"),
+                        mean_savage=("savage_mosquitoes", "mean"),
+                    )
+                    .reset_index()
+                )
+
+                summary["fixation"] = summary["mean_wolbachia"] / (summary["mean_wolbachia"] + summary["mean_savage"])
+            
+                prop_name = prop.split("_")[-1]
+                summary_rows[strain][prop_name] = summary
+
+
+        for strain, summary in summary_rows.items():
+            plt.figure(figsize=(10,6))
+            
+            for prop, summary in summary.items():
+                plt.plot(
+                    summary["cycle"],
+                    summary["fixation"],
+                    label=f"{float(prop) * 100:.0f}%"
+                )
+
+            plt.xlabel("Cycle")
+            plt.ylabel("Fixation")
+            plt.title(f"Wolbachia fixation {strain} over time for different release proportions")
+            plt.legend()
+            plt.grid(True)
+
+            plt.savefig(root / f"wolbachia_release_prop_{strain}.pdf")
+    
+        logger.info("[*] Finished Wolbachia release experiments.")
+
+    def wolbachia_release_strategies(self):
+        strategies = [0, 1, 2]
+        strains = self._get_wolbachia_strains()
+        
+        for strain, params in strains.items():
+            for i, strategy in enumerate(strategies):
+                logger.info(f"[*] Running Wolbachia strategies experiment for strain {strain} and strategy {strategy}.")
+                release_folder = os.path.join(self.output_folder, strain, f"strategy_{strategy}")
+                os.makedirs(release_folder, exist_ok=True)
+                additional_params = {
+                    **params,
+                    "wolbachia_release_prop": ("float", 0.5),
+                    "wolbachia_experiment": ("bool", True),      
+                    "wolbachia_release_strategy": ("int", strategy),
+                    "output_dir": ("str", os.path.abspath(release_folder)),        
+                }
+
+                self.simulation_metrics.compare_simulated_with_real_cases(exec_id=i, 
+                                                                        clear_db=True, 
+                                                                        plot=False,
+                                                                        additional_params=additional_params,
+                                                                        save_states=False,
+                                                                        experiment="short_headless_dengue_propagation")
+            
+        rows = {
+            strain: dict() for strain in strains.keys()
+        }
+        for strain in strains.keys():
+            folder = os.path.join(self.output_folder, strain)
+            root = Path(folder)
+            for file in root.rglob("*.csv"):
+                strategy = file.parent.name
+                df = pd.read_csv(file)
+                rows[strain][strategy] = pd.concat([rows[strain].get(strategy, pd.DataFrame()), df], ignore_index=True)
+
+        summary_rows = {
+            strain: dict() for strain in strains.keys()
+        }
+        for strain in strains.keys():
+            for strategy, df in sorted(rows[strain].items(), key=lambda item: float(item[0].split("_")[-1])):
+                summary = (
+                    df
+                    .groupby(["cycle"])
+                    .agg(
+                        mean_wolbachia=("wolbachia_mosquitoes", "mean"),
+                        mean_savage=("savage_mosquitoes", "mean"),
+                    )
+                    .reset_index()
+                )
+
+                summary["fixation"] = summary["mean_wolbachia"] / (summary["mean_wolbachia"] + summary["mean_savage"])
+            
+                strategy_name = strategy.split("_")[-1]
+                summary_rows[strain][strategy_name] = summary
+
+
+        root = Path(self.output_folder)
+        for strain, summary in summary_rows.items():
+            plt.figure(figsize=(10,6))
+            
+            for strategy, summary in summary.items():
+                plt.plot(
+                    summary["cycle"],
+                    summary["fixation"],
+                    label=f"{float(strategy) * 100:.0f}%"
+                )
+
+            plt.xlabel("Cycle")
+            plt.ylabel("Fixation")
+            plt.title(f"Wolbachia fixation {strain} over time for different release strategies")
+            plt.legend()
+            plt.grid(True)
+            plt.savefig(root / f"wolbachia_release_strategy_{strain}.pdf")
+    
+        logger.info("[*] Finished Wolbachia release experiments.")
+
+    def wolbachia_experiment(self):
+        """
+        Run a Wolbachia experiment to evaluate the impact of Wolbachia intervention on dengue transmission.
+        """
+        logger.info("[*] Running Wolbachia experiment...")
+        style_dict = [
+            {"name": "With Wolbachia", "color": "red", "dash": "dashed"},
+            {"name": "Without Wolbachia", "color": "blue", "dash": "dotted"},
+        ]
+        # additional_params = { #wmel params
+        #     "w_mosquitoes_daily_rate_of_bites": ("float", 0.95),
+        #     "w_mosquitoes_daily_latency_rate": ("float", 0.8),
+        #     "w_mosquitoes_susceptibility_to_dengue": ("float", 0.3),
+        #     "w_mosquitoes_death_rate": ("float", 1.15),
+        #     "w_mosquitoes_oviposition_rate": ("float", 0.95),
+        #     "w_mosquitoes_maturation_rate": ("float", 0.9),
+        #     "w_bs_eggs_to_mosquitoes": ("float", 0.7),
+        #     "wolbachia_release_prop": ("float", 0.7),
+        #     "wolbachia_experiment": ("bool", True),      
+        #     "output_dir": ("str", os.path.abspath(self.output_folder)),        
+        # }    
+
+        # self.simulation_metrics.compare_simulated_with_real_cases(exec_id=0, 
+        #                                                             clear_db=True, 
+        #                                                             plot=False,
+        #                                                             additional_params=additional_params,
+        #                                                             save_states=True,
+        #                                                             experiment="short_headless_dengue_propagation")
+
+        
+        # additional_params = { #savage params
+        #     "w_mosquitoes_daily_rate_of_bites": ("float", 1.0),
+        #     "w_mosquitoes_daily_latency_rate": ("float", 1.0),
+        #     "w_mosquitoes_susceptibility_to_dengue": ("float", 1.0),
+        #     "w_mosquitoes_death_rate": ("float", 1.0),
+        #     "w_mosquitoes_oviposition_rate": ("float", 1.0),
+        #     "w_mosquitoes_maturation_rate": ("float", 1.0),
+        #     "w_bs_eggs_to_mosquitoes": ("float", 1.0),
+        #     "wolbachia_experiment": ("bool", False),      
+        #     "output_dir": ("str", os.path.abspath(self.output_folder)),        
+        # }
+
+        # self.simulation_metrics.compare_simulated_with_real_cases(exec_id=1, 
+        #                                                           clear_db=False, 
+        #                                                           plot=False,
+        #                                                           additional_params=additional_params,
+        #                                                           save_states=True,
+        #                                                           experiment="short_headless_dengue_propagation")
+
+        self.simulation_metrics.plot_multiple_execs(
+            self.output_folder + "wolbachia_experiment",
+            2,
+            [0,1],
+            style_dict,
+            title=self.simulation_metrics.plot_texts["wolbachia_experiment"],
+            plot_real = False
+        )
+        
