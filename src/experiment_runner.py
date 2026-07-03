@@ -26,8 +26,14 @@ class ExperimentRunner:
             self.run_parameters_tuning_experiment()
         elif self.config.experiment == "comparison_real_simulated":
             self.run_comparison_real_simulated()
+        elif self.config.experiment == "nebulization_props_experiment":
+            self.run_nebulization_props_experiment()
+        elif self.config.experiment == "nebulization_strategy_experiment":
+            self.run_nebulization_strategy_experiment()
         elif self.config.experiment == "budget_nebulization_experiment":
             self.run_budget_nebulization_experiment()
+        elif self.config.experiment == "breeding_elimination_props_experiment":
+            self.run_breeding_elimination_props_experiment()
         elif self.config.experiment == "budget_breeding_elimination_experiment":
             self.run_budget_breeding_elimination_experiment()
         elif self.config.experiment == "budget_vaccination_experiment":
@@ -135,6 +141,42 @@ class ExperimentRunner:
         sim_metrics.compare_simulated_with_real_cases(exec_id=0, clear_db=True, plot=False)
         sim_metrics.plot_min_max_avg_real(exec_id=0)
 
+    def run_nebulization_props_experiment(self) -> None:
+        output_folder = self._make_output_path("nebulization_prop")
+        logger.info(f"[*] Output folder: {output_folder}")
+
+        experiments = Experiments(
+            output_folder,
+            self.config.region,
+            self.config.map_size,
+            self.config.start_date,
+            *self.parameters,
+            simulation_identifier=self.simulation_identifier,
+            max_cycles=self.config.max_cycles,
+            plot_language=self.config.plot_language,
+        )
+
+        logger.info("[*] Running nebulization prop experiment...")
+        experiments.nebulization_props_experiment()
+
+    def run_nebulization_strategy_experiment(self) -> None:
+        output_folder = self._make_output_path("nebulization_strategy")
+        logger.info(f"[*] Output folder: {output_folder}")
+
+        experiments = Experiments(
+            output_folder,
+            self.config.region,
+            self.config.map_size,
+            self.config.start_date,
+            *self.parameters,
+            simulation_identifier=self.simulation_identifier,
+            max_cycles=self.config.max_cycles,
+            plot_language=self.config.plot_language,
+        )
+
+        logger.info("[*] Running nebulization strategy experiment...")
+        experiments.nebulization_strategy_experiment()
+
     def run_budget_nebulization_experiment(self):
         """
         Run a nebulization experiment to evaluate the impact of different budget allocations for nebulization on dengue transmission.
@@ -155,7 +197,28 @@ class ExperimentRunner:
 
         logger.info("[*] Running nebulization budget experiment...")
         experiments.budget_nebulization_experiment()
-    
+
+    def run_breeding_elimination_props_experiment(self):
+        """
+        Run a breeding site elimination experiment to evaluate the impact of different proportions of breeding site elimination on dengue transmission.
+        """
+        output_folder = self._make_output_path(f"bs_elimination_props_experiment/")
+        logger.info(f"[*] Output folder: {output_folder}")
+
+        experiments = Experiments(
+            output_folder,
+            self.config.region,
+            self.config.map_size,
+            self.config.start_date,
+            *self.parameters,
+            simulation_identifier=self.simulation_identifier,
+            max_cycles=self.config.max_cycles,
+            plot_language=self.config.plot_language,
+        )
+
+        logger.info("[*] Running breeding site elimination props experiment...")
+        experiments.breeding_elimination_props_experiment()
+
     def run_budget_breeding_elimination_experiment(self):
         """
         Run a breeding site elimination experiment to evaluate the impact of different budget allocations for breeding site elimination on dengue transmission.
@@ -176,7 +239,7 @@ class ExperimentRunner:
 
         logger.info("[*] Running breeding site elimination budget experiment...")
         experiments.budget_breeding_elimination_experiment()
-
+    
     def run_budget_vaccination_experiment(self):
         """
         Run a vaccination experiment to evaluate the impact of different budget allocations for vaccination on dengue transmission.

@@ -2,6 +2,8 @@ import logging
 from pathlib import Path
 import time
 import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 
 from use_cases.simulation_metrics import *
 
@@ -261,7 +263,7 @@ class Experiments:
                 logger.info("[*] Running vaccine experiment for efficacy {} and proportion of vaccinated people {}...".format(efficacy, prop))
                 additional_params = {
                     "prop_vaccinated": ("float", prop),
-                    "vaccination_mode": ("bool", True),
+                    "vaccination_experiment": ("bool", True),
                     "vaccine_efficacy": ("float", efficacy)
                 }
 
@@ -277,7 +279,7 @@ class Experiments:
                 style_dict,
                 efficacy
             )
-
+   
     def parameters_sensibility(self):
         mosquitoes_per_person_list = [0.5, 3.5]
         mosquitoes_block_with_cases_list = [0.01, 1.2]
@@ -367,6 +369,222 @@ class Experiments:
         self.aquatic_mortality_experiment()
         self.mosquito_death_rate_experiment()  
 
+    def nebulization_props_experiment(self):
+        """
+        Run a nebulization experiment to evaluate the impact of different proportions of nebulization on dengue transmission.
+        """
+        prop_blocks = [0.0, 0.1, 0.3, 0.5, 0.7, 0.9, 1.0]
+        # nb_blocks = len(self.simulation_metrics.people_block)
+
+        # for i, prop in enumerate(prop_blocks):
+        #     prop_output_folder = os.path.join(self.output_folder, f"prop_{int(prop*100)}")
+        #     os.makedirs(prop_output_folder, exist_ok=True)
+
+        #     nb_nebulize_blocks = int(prop * nb_blocks)
+        #     logger.info(f"[*] Running nebulization budget experiment for prop {prop} (nebulizing {nb_nebulize_blocks} blocks)...")
+
+        #     additional_params = {
+        #         "nebulizer_experiment": ("bool", True),
+        #         "nb_blocks_nebulize": ("int", nb_nebulize_blocks),
+        #         "nebulizer_efficiency": ("float", 0.8),
+        #         "nebulization_strategy": ("int", 0),
+        #         "output_dir": ("str", os.path.abspath(prop_output_folder))
+        #     }
+
+        #     self.simulation_metrics.compare_simulated_with_real_cases(exec_id=i, 
+        #                                                               clear_db=True, 
+        #                                                               plot=False, 
+        #                                                               additional_params=additional_params, 
+        #                                                               save_states=False, 
+        #                                                               experiment="short_headless_dengue_propagation")
+            
+        root = Path(self.output_folder)
+
+        rows = {prop: pd.DataFrame() for prop in prop_blocks}
+        
+        for file in root.rglob("*.csv"):
+            prop_file = file.parent.name
+            prop = float(prop_file.split("_")[-1]) / 100
+            df = pd.read_csv(file)
+            if rows.get(prop) is not None:
+                rows[prop] = pd.concat([rows[prop], df], ignore_index=True)
+
+        
+
+        summaries = {}
+        for prop, df in rows.items():
+            summaries[prop] = (
+                df
+                .groupby(["cycle"])
+                .agg(
+                    mean_cases=("infected_people", "mean"),
+                    mean_mosquitoes=("living_mosquitoes", "mean"),
+                )
+                .reset_index()
+            )
+
+        plt.figure(figsize=(10,6))
+        for prop, summary in summaries.items():
+            plt.plot(
+                summary["cycle"],
+                summary["mean_mosquitoes"],
+                label=f"{prop*100:.0f}%",
+            )
+
+        plt.xlabel("Cycle")
+        plt.ylabel("Average Mosquito Population")
+        plt.title(f"Entomological Impact of Reactive Nebulization with Different Proportions of Blocks Nebulized")
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(root / f"nebulization_prop_mosquitoes.pdf")
+
+        plt.figure(figsize=(10,6))
+        for prop, summary in summaries.items():
+            weekly_summary = (
+                summary
+                .assign(week=lambda df: ((df["cycle"]) // 14) + 2)
+                .groupby(["week"])
+                .agg(mean_cases=("mean_cases", "sum"))
+                .reset_index()
+            )
+
+            weekly_summary = pd.concat(
+                [
+                    pd.DataFrame({"week": [1], "mean_cases": [13]}),
+                    weekly_summary,
+                ],
+                ignore_index=True,
+            )
+
+            print(weekly_summary.to_string())
+
+            plt.plot(
+                weekly_summary["week"],
+                weekly_summary["mean_cases"],
+                label=f"{prop*100:.0f}%",
+            )
+        
+        plt.xlabel("Week")
+        plt.ylabel("Average Dengue Cases")
+        plt.title(f"Epidemiological Impact of Reactive Nebulization with Different Proportions of Blocks Nebulized")
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(root / f"nebulization_prop_cases.pdf")
+
+    def nebulization_strategy_experiment(self):
+        """
+        Run a nebulization strategy experiment to evaluate the impact of different nebulization strategies on dengue transmission.
+        """
+        # nb_blocks = len(self.simulation_metrics.people_block)
+        strategies = [-1, 0, 1, 2]  #  1: mensal, 2: semanal
+        perc_blocks_nebulize = [0.1, 0.025]
+
+
+        # logger.info("[*] Clearing data from database...")
+        # self.simulation_metrics.db.clear_database()
+
+        # for i, strategy in enumerate(strategies):
+            # if strategy in [-1, 0]:
+            #     continue
+        #     logger.info(f"[*] Running nebulization strategy experiment for strategy {strategy} and percentage {perc_blocks_nebulize[i]}...")
+        #     output_folder = os.path.join(self.output_folder, f"strategy_{strategy}_{perc_blocks_nebulize[i]}")
+
+        #     additional_params = {
+        #         "nebulizer_experiment": ("bool", True),
+        #         "nb_blocks_nebulize": ("int", int(nb_blocks * perc_blocks_nebulize[i])), 
+        #         "nebulizer_efficiency": ("float", 0.8),
+        #         "nebulization_strategy": ("int", strategy),
+        #         "output_dir": ("str", os.path.abspath(output_folder))
+        #     }
+
+        #     self.simulation_metrics.compare_simulated_with_real_cases(exec_id=i, 
+        #                                                               clear_db=True, 
+        #                                                               plot=False, 
+        #                                                               additional_params=additional_params, 
+        #                                                               save_states=False, 
+        #                                                               experiment="short_headless_dengue_propagation")
+
+        roots = [Path("/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/experiments/nebulization_prop/prop_0"), Path("/home/emily/Documentos/mestrado/simulation/dengue-cbrp-framework/experiments/nebulization_prop/prop_10"), Path(self.output_folder)]
+
+        rows = {str(strategy): pd.DataFrame() for strategy in strategies}
+        
+        for root in roots:
+            for file in root.rglob("*.csv"):
+                file_name = file.parent.name
+                if "strategy" in file_name:
+                    strategy = str(file_name.split("_")[1])
+                elif "prop_0" in file_name:
+                    strategy = str(-1)
+                else:
+                    strategy = str(0)
+                df = pd.read_csv(file)
+                if rows.get(strategy) is not None:
+                    rows[strategy] = pd.concat([rows[strategy], df], ignore_index=True)
+
+        
+
+        summaries = {}
+        for strategy, df in rows.items():
+            summaries[strategy] = (
+                df
+                .groupby(["cycle"])
+                .agg(
+                    mean_cases=("infected_people", "mean"),
+                    mean_mosquitoes=("living_mosquitoes", "mean"),
+                )
+                .reset_index()
+            )
+
+        plt.figure(figsize=(10,6))
+        for strategy, summary in summaries.items():
+            plt.plot(
+                summary["cycle"],
+                summary["mean_mosquitoes"],
+                label=f"{strategy}",
+            )
+
+        plt.xlabel("Cycle")
+        plt.ylabel("Average Mosquito Population")
+        plt.title("Impact of Nebulization Strategies on Mosquito Population")
+        plt.legend(["No intervention", "Reactive", "Monthly", "Weekly"])
+        plt.grid(True)
+        plt.savefig(root / "nebulization_strategies_mosquitoes.pdf")
+        plt.close()
+
+        plt.figure(figsize=(10,6))
+        for strategy, summary in summaries.items():
+            weekly_summary = (
+                summary
+                .assign(week=lambda df: ((df["cycle"]) // 14) + 2)
+                .groupby(["week"])
+                .agg(mean_cases=("mean_cases", "sum"))
+                .reset_index()
+            )
+
+            weekly_summary = pd.concat(
+                [
+                    pd.DataFrame({"week": [1], "mean_cases": [13]}),
+                    weekly_summary,
+                ],
+                ignore_index=True,
+            )
+
+            print(weekly_summary.to_string())
+
+            plt.plot(
+                weekly_summary["week"],
+                weekly_summary["mean_cases"],
+            )
+
+        plt.xlabel("Week")
+        plt.ylabel("Average Dengue Cases")
+        plt.title("Impact of Nebulization Strategies on Dengue Cases")
+        plt.legend(["No intervention", "Reactive", "Monthly", "Weekly"])
+        plt.grid(True)
+        plt.savefig(root / "nebulization_strategies_cases.pdf")
+        plt.close()
+
+
     def budget_nebulization_experiment(self):
         """
         Run a nebulization experiment to evaluate the impact of different budget allocations for nebulization on dengue transmission.
@@ -433,6 +651,109 @@ class Experiments:
         
         elapsed_time = time.time() - st_time
         logger.info(f"[*] Finished all breeding site elimination budget experiments in {elapsed_time//60:.2f} minutes.")
+
+    def breeding_elimination_props_experiment(self):
+        """
+        Run a breeding site elimination experiment to evaluate the impact of different proportions of breeding site elimination on dengue transmission.
+        """
+        prop_blocks = [0.1, 0.3, 0.5, 0.7, 0.9, 1.0]
+        nb_blocks = len(self.simulation_metrics.people_block)
+
+        for i, prop in enumerate(prop_blocks):
+            prop_output_folder = os.path.join(self.output_folder, f"prop_{int(prop*100)}")
+            os.makedirs(prop_output_folder, exist_ok=True)
+
+            nb_eliminate_blocks = int(prop * nb_blocks)
+            logger.info(f"[*] Running breeding site elimination budget experiment for prop {prop} (eliminating {nb_eliminate_blocks} blocks)...")
+
+            additional_params = {
+                "bs_elimination_experiment": ("bool", True),
+                "nb_blocks_bs_elimination": ("int", nb_eliminate_blocks),
+                # "bs_elimination_efficiency": ("float", 0.2),
+                "bs_elimination_strategy": ("int", 0),
+                "output_dir": ("str", os.path.abspath(prop_output_folder))
+            }
+
+            self.simulation_metrics.compare_simulated_with_real_cases(exec_id=i, 
+                                                                      clear_db=True, 
+                                                                      plot=False, 
+                                                                      additional_params=additional_params, 
+                                                                      save_states=False, 
+                                                                      experiment="short_headless_dengue_propagation")
+            
+        root = Path(self.output_folder)
+
+        rows = {prop: pd.DataFrame() for prop in prop_blocks}
+        
+        for file in root.rglob("*.csv"):
+            prop_file = file.parent.name
+            prop = float(prop_file.split("_")[-1]) / 100
+            df = pd.read_csv(file)
+            if rows.get(prop) is not None:
+                rows[prop] = pd.concat([rows[prop], df], ignore_index=True)
+
+        
+
+        summaries = {}
+        for prop, df in rows.items():
+            summaries[prop] = (
+                df
+                .groupby(["cycle"])
+                .agg(
+                    mean_cases=("infected_people", "mean"),
+                    mean_mosquitoes=("living_mosquitoes", "mean"),
+                )
+                .reset_index()
+            )
+
+        plt.figure(figsize=(10,6))
+        for prop, summary in summaries.items():
+            plt.plot(
+                summary["cycle"],
+                summary["mean_mosquitoes"],
+                label=f"{prop*100:.0f}%",
+            )
+
+        plt.xlabel("Cycle")
+        plt.ylabel("Average Mosquito Population")
+        plt.title(f"Entomological Impact of Reactive Breeding Elimination with Different Proportions of Blocks Visited")
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(root / f"bs_elimination_prop_mosquitoes.pdf")
+
+        plt.figure(figsize=(10,6))
+        for prop, summary in summaries.items():
+            weekly_summary = (
+                summary
+                .assign(week=lambda df: ((df["cycle"]) // 14) + 2)
+                .groupby(["week"])
+                .agg(mean_cases=("mean_cases", "sum"))
+                .reset_index()
+            )
+
+            weekly_summary = pd.concat(
+                [
+                    pd.DataFrame({"week": [1], "mean_cases": [13]}),
+                    weekly_summary,
+                ],
+                ignore_index=True,
+            )
+
+            print(weekly_summary.to_string())
+
+            plt.plot(
+                weekly_summary["week"],
+                weekly_summary["mean_cases"],
+                label=f"{prop*100:.0f}%",
+            )
+        
+        plt.xlabel("Week")
+        plt.ylabel("Average Dengue Cases")
+        plt.title(f"Epidemiological Impact of Reactive Breeding Elimination with Different Proportions of Blocks Visited")
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(root / f"bs_elimination_prop_cases.pdf")
+
 
     def budget_vaccination_experiment(self):
         """
@@ -614,24 +935,24 @@ class Experiments:
         release_props = [0.1, 0.3, 0.5, 0.7, 0.9]
         strains = self._get_wolbachia_strains()
         
-        for strain, params in strains.items():
-            for i, prop in enumerate(release_props):
-                logger.info(f"[*] Running Wolbachia release experiment for strain {strain} and prop {prop}.")
-                release_folder = os.path.join(self.output_folder, strain, f"prop_{prop}")
-                os.makedirs(release_folder, exist_ok=True)
-                additional_params = {
-                    **params,
-                    "wolbachia_release_prop": ("float", prop),
-                    "wolbachia_experiment": ("bool", True),      
-                    "output_dir": ("str", os.path.abspath(release_folder)),        
-                }
+        # for strain, params in strains.items():
+        #     for i, prop in enumerate(release_props):
+        #         logger.info(f"[*] Running Wolbachia release experiment for strain {strain} and prop {prop}.")
+        #         release_folder = os.path.join(self.output_folder, strain, f"prop_{prop}")
+        #         os.makedirs(release_folder, exist_ok=True)
+        #         additional_params = {
+        #             **params,
+        #             "wolbachia_release_prop": ("float", prop),
+        #             "wolbachia_experiment": ("bool", True),      
+        #             "output_dir": ("str", os.path.abspath(release_folder)),        
+        #         }
 
-                self.simulation_metrics.compare_simulated_with_real_cases(exec_id=i, 
-                                                                        clear_db=True, 
-                                                                        plot=False,
-                                                                        additional_params=additional_params,
-                                                                        save_states=False,
-                                                                        experiment="short_headless_dengue_propagation")
+        #         self.simulation_metrics.compare_simulated_with_real_cases(exec_id=i, 
+        #                                                                 clear_db=True, 
+        #                                                                 plot=False,
+        #                                                                 additional_params=additional_params,
+        #                                                                 save_states=False,
+        #                                                                 experiment="short_headless_dengue_propagation")
             
         rows = {
             strain: dict() for strain in strains.keys()
@@ -689,25 +1010,25 @@ class Experiments:
         strategies = [0, 1, 2]
         strains = self._get_wolbachia_strains()
         
-        for strain, params in strains.items():
-            for i, strategy in enumerate(strategies):
-                logger.info(f"[*] Running Wolbachia strategies experiment for strain {strain} and strategy {strategy}.")
-                release_folder = os.path.join(self.output_folder, strain, f"strategy_{strategy}")
-                os.makedirs(release_folder, exist_ok=True)
-                additional_params = {
-                    **params,
-                    "wolbachia_release_prop": ("float", 0.5),
-                    "wolbachia_experiment": ("bool", True),      
-                    "wolbachia_release_strategy": ("int", strategy),
-                    "output_dir": ("str", os.path.abspath(release_folder)),        
-                }
+        # for strain, params in strains.items():
+        #     for i, strategy in enumerate(strategies):
+        #         logger.info(f"[*] Running Wolbachia strategies experiment for strain {strain} and strategy {strategy}.")
+        #         release_folder = os.path.join(self.output_folder, strain, f"strategy_{strategy}")
+        #         os.makedirs(release_folder, exist_ok=True)
+        #         additional_params = {
+        #             **params,
+        #             "wolbachia_release_prop": ("float", 0.5),
+        #             "wolbachia_experiment": ("bool", True),      
+        #             "wolbachia_release_strategy": ("int", strategy),
+        #             "output_dir": ("str", os.path.abspath(release_folder)),        
+        #         }
 
-                self.simulation_metrics.compare_simulated_with_real_cases(exec_id=i, 
-                                                                        clear_db=True, 
-                                                                        plot=False,
-                                                                        additional_params=additional_params,
-                                                                        save_states=False,
-                                                                        experiment="short_headless_dengue_propagation")
+        #         self.simulation_metrics.compare_simulated_with_real_cases(exec_id=i, 
+        #                                                                 clear_db=True, 
+        #                                                                 plot=False,
+        #                                                                 additional_params=additional_params,
+        #                                                                 save_states=False,
+        #                                                                 experiment="short_headless_dengue_propagation")
             
         rows = {
             strain: dict() for strain in strains.keys()
@@ -716,7 +1037,8 @@ class Experiments:
             folder = os.path.join(self.output_folder, strain)
             root = Path(folder)
             for file in root.rglob("*.csv"):
-                strategy = file.parent.name
+                file_name = file.parent.name
+                strategy = file_name.split("_")[-1]
                 df = pd.read_csv(file)
                 rows[strain][strategy] = pd.concat([rows[strain].get(strategy, pd.DataFrame()), df], ignore_index=True)
 
@@ -724,40 +1046,74 @@ class Experiments:
             strain: dict() for strain in strains.keys()
         }
         for strain in strains.keys():
-            for strategy, df in sorted(rows[strain].items(), key=lambda item: float(item[0].split("_")[-1])):
+            for strategy, df in rows[strain].items():
                 summary = (
                     df
                     .groupby(["cycle"])
                     .agg(
                         mean_wolbachia=("wolbachia_mosquitoes", "mean"),
                         mean_savage=("savage_mosquitoes", "mean"),
+                        mean_cases=("infected_people", "mean")
                     )
                     .reset_index()
                 )
 
                 summary["fixation"] = summary["mean_wolbachia"] / (summary["mean_wolbachia"] + summary["mean_savage"])
             
-                strategy_name = strategy.split("_")[-1]
-                summary_rows[strain][strategy_name] = summary
+                summary_rows[strain][strategy] = summary
 
+        print(summary_rows)
 
         root = Path(self.output_folder)
-        for strain, summary in summary_rows.items():
+        for strain, summary_strain in summary_rows.items():
             plt.figure(figsize=(10,6))
             
-            for strategy, summary in summary.items():
+            for strategy, summary in summary_strain.items():
                 plt.plot(
                     summary["cycle"],
                     summary["fixation"],
-                    label=f"{float(strategy) * 100:.0f}%"
+                    label=f"{strategy}"
                 )
 
             plt.xlabel("Cycle")
             plt.ylabel("Fixation")
-            plt.title(f"Wolbachia fixation {strain} over time for different release strategies")
+            plt.title(f"Wolbachia fixation {strain} for Different Release Strategies")
             plt.legend()
             plt.grid(True)
             plt.savefig(root / f"wolbachia_release_strategy_{strain}.pdf")
+            plt.close()
+
+            plt.figure(figsize=(10,6))
+            for strategy, summary in summary_strain.items():
+                weekly_summary = (
+                    summary
+                    .assign(week=lambda df: ((df["cycle"]) // 14) + 2)
+                    .groupby(["week"])
+                    .agg(mean_cases=("mean_cases", "sum"))
+                    .reset_index()
+                )
+
+                weekly_summary = pd.concat(
+                    [
+                        pd.DataFrame({"week": [1], "mean_cases": [13]}),
+                        weekly_summary,
+                    ],
+                    ignore_index=True,
+                )
+
+                plt.plot(
+                    weekly_summary["week"],
+                    weekly_summary["mean_cases"],
+                )
+        
+            plt.xlabel("Week")
+            plt.ylabel("Average Dengue Cases")
+            plt.title(f"Epidemiological Impact of {strain} for Different Release Strategies")
+            plt.legend(["Reactive", "Monthly", "Weekly"])
+            plt.grid(True)
+            plt.savefig(root / f"wolbachia_release_strategy_{strain}_cases.pdf")
+            plt.close()       
+            
     
         logger.info("[*] Finished Wolbachia release experiments.")
 
