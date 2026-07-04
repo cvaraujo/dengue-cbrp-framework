@@ -143,20 +143,26 @@ global {
 	bool nebulizer_experiment <- false;
 	float nebulizer_efficiency <- 0.8;
 	int nb_blocks_nebulize <- 5;
+	int nebulization_strategy <- 0;
 	int count_mosquitoes_killed <- 0;
+	bool nebulization_completed <- false;
 	
 	bool bs_elimination_experiment <- false;
+	float bs_elimination_efficiency <- 0.5;
 	int nb_blocks_bs_elimination <- 5;
+	int bs_elimination_strategy <- 0;
 	int count_sites_eliminate <- 0;
+	bool bs_elimination_completed <- false;
 	
 	bool parameters_experiment <- false;
 	bool mosquitoes_experiment <- false;
 	
-	bool wolbachia_experiment <- true;
+	bool wolbachia_experiment <- false;
 	float wolbachia_release_prop <- 0.3;
-	int wolbachia_release_strategy <- 0; // 0 - inicio, 1 - mensal, 2 - qnd há pico
+	int wolbachia_release_strategy <- 0;
 	bool release_completed <- false;
 	int wolbachia_release_nb <- 10000;
+	float reactive_infected_threshold <- 0.0005;
 	
 	float simulation_seed <- 0.0;
 	float elapsed_days <- 0.0;
@@ -203,7 +209,6 @@ global {
 		
 		if(current_date.hour = 5 and current_date != starting_date){
 			if weekday = 7 {
-				// nebulizar
 				weekday <- 0;
 			} 
 			
@@ -229,30 +234,106 @@ global {
 		//}
 	}
 	
-	reflex release_wolbachia when: wolbachia_experiment and wolbachia_release_strategy != 0{
-		if wolbachia_release_strategy = 1 {
-			if monthday = 1 and current_date.hour = 5 {
-				write "First day of the month. Releasing wolbachia!";
-				do create_wolbachia;
-			}
-		} else{
-			int curr_infected <- People count(each.state = 1);	
-			int total_people <- length(People);
-			if (curr_infected/total_people) >= 0.001 and not release_completed{
-				write "There are > 0,1% infected people (outbreak starting). Releasing wolbachia.";
+	reflex release_wolbachia when: wolbachia_experiment and current_date.hour = 5 {
+		int curr_infected <- People count(each.state = 1);
+		int total_people <- length(People);
+		float infected_prop <-curr_infected / total_people;
+		
+		if wolbachia_release_strategy = 0 {
+			if infected_prop >= reactive_infected_threshold and not release_completed {
+				write "Outbreak detected. Releasing wolbachia.";
 				do create_wolbachia;
 				release_completed <- true;
-			} 			
+			} else {
+				write "No outbreak! " +  infected_prop + " " + curr_infected;
+			}
+		} else if wolbachia_release_strategy = 1 {
+			if monthday = 1 {
+				write "First day of the month. Releasing wolbachia.";
+				do create_wolbachia;
+			}
+		} else if wolbachia_release_strategy = 2 {
+			if weekday = 1 {
+				write "First day of the week. Releasing wolbachia.";
+				do create_wolbachia;
+			}
 		}
 	}
 	
-	reflex nebulize_critical_blocks when: (nebulizer_experiment and cycle = 2) {
+	reflex nebulize_critical_blocks when: nebulizer_experiment and current_date.hour = 5 {
+		int curr_infected <- People count(each.state = 1);
+		int total_people <- length(People);
+		float infected_prop <-curr_infected / total_people;
+		
+		if nebulization_strategy = 0 {
+			if infected_prop >= reactive_infected_threshold and not nebulization_completed {
+				write "Outbreak detected. Nebulizing.";
+				do nebulize_critical_blocks_action;
+				nebulization_completed <- true;
+			} else{
+				write "No outbreak! " +  infected_prop + " " + curr_infected;
+			}
+		} else if nebulization_strategy = 1 {
+			if monthday = 1 {
+				write "First day of the month. Nebulizing.";
+				do nebulize_critical_blocks_action;
+			}
+		} else if nebulization_strategy = 2 {
+			if weekday = 1 {
+				write "First day of the week. Nebulizing.";
+				do nebulize_critical_blocks_action;
+			}
+		}
+	}
+	
+	reflex eliminate_bs_critical_blocks when: bs_elimination_experiment and current_date.hour = 5 {
+		int curr_infected <- People count(each.state = 1);
+		int total_people <- length(People);
+		float infected_prop <- curr_infected / total_people;
+		
+		if bs_elimination_strategy = 0 {
+			if infected_prop >= reactive_infected_threshold and not bs_elimination_completed {
+				write "Outbreak detected. Eliminating bs.";
+				do eliminate_bs_critical_blocks_action;
+				bs_elimination_completed <- true;
+			} else{
+				write "No outbreak! " +  infected_prop + " " + curr_infected;
+			}
+		} else if bs_elimination_strategy = 1 {
+			if monthday = 1 {
+				write "First day of the month. Nebulizing.";
+				do eliminate_bs_critical_blocks_action;
+			}
+		} else if bs_elimination_strategy = 2 {
+			if weekday = 1 {
+				write "First day of the week. Nebulizing.";
+				do eliminate_bs_critical_blocks_action;
+			}
+		}
+	}
+	
+	reflex stop_simulation when: (start_from_cycle + cycle) >= max_cycles {
+		ask Saver {
+			do die;
+		}
+		
+	   end_simulation <- true;
+	   write "end simulation";
+		do pause;
+		
+		//loop i from: 0 to: max_cycles {
+		//	total_infections <- total_infections + cycle_infected_people[i];
+		//}
+		
+		//write "" + total_infections + " were infected in total";
+	}
+	
+	action nebulize_critical_blocks_action {
 
 		write "killing mosquitoes from " + nb_blocks_nebulize + " most critical blocks.";
 	
 		map<Buildings,int> cases_per_building <- [];
 
-		// Conta infectados por prédio
 		loop b over: Buildings {
 	
 			int n_cases <- length(
@@ -262,23 +343,16 @@ global {
 			);
 	
 			cases_per_building[b] <- n_cases;
-	
-			//write "" + b.id + " => " + n_cases;
 		}
 	
-		// Ordena os prédios pelo número de casos
 		list<Buildings> sorted_buildings <- 
 			Buildings sort_by (-cases_per_building[each]);
 	
-		// Debug
 		int nb_mosquitoes_now <- length(Mosquitoes); 
 	
 		loop i from: 0 to: min(nb_blocks_nebulize-1, length(sorted_buildings)-1) {
 	
 			Buildings critical_building <- sorted_buildings[i];
-	
-			//write "Building " + critical_building.id + 
-			//	  " cases: " + cases_per_building[critical_building];
 	
 			ask Mosquitoes where (each.current_building = critical_building  and flip(nebulizer_efficiency)){
 				count_mosquitoes_killed <- count_mosquitoes_killed + 1;
@@ -289,7 +363,7 @@ global {
 		write "Reduced " + ((length(Mosquitoes)/nb_mosquitoes_now) - 1) * 100 + "% mosquitoes";
 	}
 	
-	reflex eliminate_bs_critical_blocks when: (bs_elimination_experiment and cycle = 2) {
+	action eliminate_bs_critical_blocks_action {
 
 		write "eliminating bs from " + nb_blocks_bs_elimination + " most critical blocks.";
 	
@@ -315,10 +389,18 @@ global {
 		loop i from: 0 to: min(nb_blocks_bs_elimination-1, length(sorted_buildings)-1) {
 	
 			Buildings critical_building <- sorted_buildings[i];
+
+			ask Mosquitoes where (each.current_building = critical_building and flip(bs_elimination_efficiency)){
+				count_mosquitoes_killed <- count_mosquitoes_killed + 1;
+				do die;
+			}
 	
 			ask BreedingSites where (each.building_location = critical_building){
 				ask Mosquitoes where (each.breeding_site = self){
 					count_mosquitoes_killed <- count_mosquitoes_killed + 1;
+					do die;
+				}
+				ask Eggs where (each.breeding_site = self){
 					do die;
 				}
 				count_sites_eliminate <- count_sites_eliminate + 1;
@@ -329,22 +411,6 @@ global {
 	
 		write "Reduced " + ((length(BreedingSites)/nb_bs_now) - 1) * 100 + "% bs";
 		write "Reduced " + ((length(Mosquitoes)/nb_mosquitoes_now) - 1) * 100 + "% mosquitoes";
-	}
-	
-	reflex stop_simulation when: (start_from_cycle + cycle) >= max_cycles {
-		ask Saver {
-			do die;
-		}
-		
-	   end_simulation <- true;
-	   write "end simulation";
-		do pause;
-		
-		//loop i from: 0 to: max_cycles {
-		//	total_infections <- total_infections + cycle_infected_people[i];
-		//}
-		
-		//write "" + total_infections + " were infected in total";
 	}
 	
 	action create_wolbachia {
@@ -445,14 +511,17 @@ global {
 	
 		write "nebulizer_efficiency: " + nebulizer_efficiency;
 		write "nb_blocks_nebulize: " + nb_blocks_nebulize;
+		write "nebulization_strategy: " + nebulization_strategy;
 		
+		write "bs_elimination_efficiency: " + bs_elimination_efficiency;
 		write "nb_blocks_bs_elimination: " + nb_blocks_bs_elimination;
-		write "budget: " + budget;
+		write "bs_elimination_strategy: " + bs_elimination_strategy;
 					
 		
 		write "";
-		write "----- RANDOM-----";
+		write "----- OTHERS -----";
 		write "output folder: " + output_dir;
+		write "budget: " + budget;
 		
 		write "==================================================";
 		write "";
@@ -803,10 +872,6 @@ global {
 		}		
 		
 			
-		if wolbachia_experiment and wolbachia_release_strategy = 0 {				
-			do create_wolbachia;
-		}
-		
 		int n_wolbachia <- Mosquitoes count(each.wolbachia);
 		write "size people: " + length(People);
 		write "size mosquitoes: " + length(Mosquitoes);
@@ -939,7 +1004,6 @@ species BreedingSites {
 	list<Buildings> buildings;
 	// Eggs to crete the species
 	int new_eggs <- 0;
-	bool wolbachia_eggs <- false;
 	
 	init {
 		// Update ID and count of species
@@ -947,21 +1011,6 @@ species BreedingSites {
 			id <- cnt_breeding_sites;
 			cnt_breeding_sites <- cnt_breeding_sites + 1;
 		}
-	}
-	
-	reflex create_new_eggs when: (new_eggs > 0) {
-		loop while: new_eggs > 0 and (eggs <= bs_capacity or not wolbachia_experiment){		
-			eggs <- eggs + 1;
-			create Eggs {
-				breeding_site <- myself;
-				wolbachia <- myself.wolbachia_eggs;
-			}
-			new_eggs <- new_eggs - 1;
-		} 
-		wolbachia_eggs <- false;			
-		if eggs <= bs_capacity or not wolbachia_experiment{
-			//write "Breeding site max capacity reached!";
-		} 
 	}
 	
 	aspect default {
@@ -1166,12 +1215,18 @@ species Mosquitoes skills: [moving] {
 		if flip(proba){
 			BreedingSites potential_bs <- BreedingSites at_distance(min_distance_to_oviposition #m) closest_to(self);
 			if potential_bs != nil {
-				potential_bs.new_eggs <- rnd(1, mosquitoes_max_carrying_capacity);
-				potential_bs.wolbachia_eggs <- wolbachia;
+				int new_eggs <- rnd(1, mosquitoes_max_carrying_capacity);
+				loop while: new_eggs > 0 and (potential_bs.eggs < bs_capacity or not wolbachia_experiment){		
+					create Eggs {
+						breeding_site <- potential_bs;
+						wolbachia <- myself.wolbachia;
+					}
+					potential_bs.eggs <- potential_bs.eggs + 1;
+					new_eggs <- new_eggs - 1;
+				}
 			}			
 		}
 	}
-	
 	aspect default {
 		int mosquito_size <- 2;
 		
@@ -1360,9 +1415,10 @@ species Saver skills: [SQLSKILL] {
 			cycle,
 			count_mosquitoes_killed,
 			infected_people,
-			living_mosquitoes
+			living_mosquitoes,
+			count_sites_eliminate
 	    ]
-	    to: output_dir + "/run_"+ budget + "_" + execution_id  + "_" + scenario_id + ".csv"
+	    to: output_dir + "/run_" + execution_id  + "_" + scenario_id + ".csv"
 		rewrite: false
 	    format: csv
 	    header: true;
@@ -1443,18 +1499,22 @@ experiment dengue_propagation type: gui until: (cycle >= max_cycles and end_simu
 	parameter "BS Capacity" var: bs_capacity category: "int";
 	parameter "Wolbachia experiment" var: wolbachia_experiment category: "bool";
 	parameter "Wolbachia release prop" var:  wolbachia_release_prop category: "float";
-	parameter "Wolbachia release strategy" var:wolbachia_release_strategy category: "float";
+	parameter "Wolbachia release strategy" var: wolbachia_release_strategy category: "int";
+	parameter "Wolbachia release nb" var: wolbachia_release_nb category: "int";
 	//	
 	parameter "Nebulizer Efficiency" var: nebulizer_efficiency category: "float" init: 0.8;
 	parameter "Number of blocks to nebulize" var: nb_blocks_nebulize category: "int";
 	parameter "Nebulizer experiment" var: nebulizer_experiment category: "bool";
+	parameter "Nebulization strategy" var: nebulization_strategy category: "int";
 	//
 	parameter "Proportion of vaccinated people" var:prop_vaccinated category:"float";
 	parameter "Vaccination efficacy" var:vaccine_efficacy category:"float";
 	parameter "Vaccination experiment" var: vaccination_experiment category: "bool";
 	//
+	parameter "BS Elimination Efficiency" var: bs_elimination_efficiency category: "float";
 	parameter "Number of blocks to eliminate bs" var: nb_blocks_bs_elimination category: "int";
 	parameter "Eliminate bs experiment" var: bs_elimination_experiment category: "bool";
+	parameter "BS elimination strategy" var: bs_elimination_strategy category: "int";
 	
 	output {
 		display city type: opengl {
@@ -1520,18 +1580,22 @@ experiment long_headless_dengue_propagation type: batch keep_seed: true until: (
 	parameter "BS Capacity" var: bs_capacity category: "int";
 	parameter "Wolbachia experiment" var: wolbachia_experiment category: "bool";
 	parameter "Wolbachia release prop" var:  wolbachia_release_prop category: "float";
-	parameter "Wolbachia release strategy" var:wolbachia_release_strategy category: "float";
+	parameter "Wolbachia release strategy" var: wolbachia_release_strategy category: "int";
+	parameter "Wolbachia release nb" var: wolbachia_release_nb category: "int";
 	//	
 	parameter "Nebulizer Efficiency" var: nebulizer_efficiency category: "float" init: 0.8;
 	parameter "Number of blocks to nebulize" var: nb_blocks_nebulize category: "int";
 	parameter "Nebulizer experiment" var: nebulizer_experiment category: "bool";
+	parameter "Nebulization strategy" var: nebulization_strategy category: "int";
 	//
 	parameter "Proportion of vaccinated people" var:prop_vaccinated category:"float";
 	parameter "Vaccination efficacy" var:vaccine_efficacy category:"float";
 	parameter "Vaccination experiment" var: vaccination_experiment category: "bool";
 	//
+	parameter "BS Elimination Efficiency" var: bs_elimination_efficiency category: "float";
 	parameter "Number of blocks to eliminate bs" var: nb_blocks_bs_elimination category: "int";
 	parameter "Eliminate bs experiment" var: bs_elimination_experiment category: "bool";
+	parameter "BS elimination strategy" var: bs_elimination_strategy category: "int";
 	//
 	parameter "Containment budget" var: budget category: "int";
 }
@@ -1575,18 +1639,22 @@ experiment short_headless_dengue_propagation type: batch keep_seed: true until: 
 	parameter "BS Capacity" var: bs_capacity category: "int";
 	parameter "Wolbachia experiment" var: wolbachia_experiment category: "bool";
 	parameter "Wolbachia release prop" var:  wolbachia_release_prop category: "float";
-	parameter "Wolbachia release strategy" var:wolbachia_release_strategy category: "float";
+	parameter "Wolbachia release strategy" var: wolbachia_release_strategy category: "int";
+	parameter "Wolbachia release nb" var: wolbachia_release_nb category: "int";
 	//	
 	parameter "Nebulizer Efficiency" var: nebulizer_efficiency category: "float" init: 0.8;
 	parameter "Number of blocks to nebulize" var: nb_blocks_nebulize category: "int";
 	parameter "Nebulizer experiment" var: nebulizer_experiment category: "bool";
+	parameter "Nebulization strategy" var: nebulization_strategy category: "int";
 	//
 	parameter "Proportion of vaccinated people" var:prop_vaccinated category:"float";
 	parameter "Vaccination efficacy" var:vaccine_efficacy category:"float";
 	parameter "Vaccination experiment" var: vaccination_experiment category: "bool";
 	//
+	parameter "BS Elimination Efficiency" var: bs_elimination_efficiency category: "float";
 	parameter "Number of blocks to eliminate bs" var: nb_blocks_bs_elimination category: "int";
 	parameter "Eliminate bs experiment" var: bs_elimination_experiment category: "bool";
+	parameter "BS elimination strategy" var: bs_elimination_strategy category: "int";
 	//
 	parameter "Containment budget" var: budget category: "int";
 }
