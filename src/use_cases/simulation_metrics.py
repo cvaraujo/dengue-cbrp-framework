@@ -31,7 +31,11 @@ class SimulationMetrics:
     def _get_city_info(self, city: str):
         if city == "Alto Santo, Ceará, Brasil":
             return "ALTO SANTO", "alto-santo"
-        return "LIMOEIRO", "limoeiro"
+        if city == "Guaratiba, Rio de Janeiro, Brasil":
+            return "GT", "guaratiba"
+        if city == "Limoeiro do Norte, Ceará, Brasil":
+            return "LIMOEIRO", "limoeiro"
+        raise ValueError(f"City '{city}' deu erro")
 
     def _build_shapefile_path(self, city_key: str, map_size: int) -> str:
         path = os.path.abspath(f"./includes/{city_key}_{map_size}")

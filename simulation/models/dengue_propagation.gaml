@@ -484,7 +484,7 @@ global {
 			}
 		}
 		
-//		write "Mosquitoes: " + string(length(Mosquitoes));
+		write "Mosquitoes: " + string(length(Mosquitoes));
 		if fill_data {
 //			write "[!] Fill Data in Start Scenario...";	
 			do update_start_scenario;
@@ -492,22 +492,31 @@ global {
 	}
 	
 	action load_blocks_to_nebulize {
-		int num_blocks <- length(Buildings);
-		need_nebulize <- list_with(num_blocks, false);
-	
-		if solution_id != -1 {	
-			ask Saver {			
+		// Size from Roads.block_id (matches Python graph.b). Buildings can be a smaller
+		// subset because polygons with area = 0 are filtered out in create_street_blocks_and_save,
+		// so using max(Buildings.id) here used to crash with IndexOutOfBounds when the optimizer
+		// returned a block id outside the Buildings subset.
+		int max_block_id <- max([Roads max_of(each.block_id), Buildings max_of(each.id)]);
+		need_nebulize <- list_with(max_block_id + 1, false);
+
+		if solution_id != -1 {
+			ask Saver {
 				list<list> select_blocks <- self.select(
 					params: POSTGRES,
 					select: "SELECT blocks FROM blocks_to_nebulize where (solution_id=?);",
 					values:[solution_id]
 				);
-				
-				
+
 				loop blocks over: select_blocks[2] {
 					list<string> blocks_to_nebulize <- blocks[0] split_with ",";
 					loop b over: blocks_to_nebulize {
-						need_nebulize[int(b)] <- true;
+						int bi <- int(b);
+						if (bi >= 0 and bi < length(need_nebulize)) {
+							need_nebulize[bi] <- true;
+						} else {
+							write "[!] load_blocks_to_nebulize: skipping out-of-range block id " + bi
+								+ " (valid range 0.." + (length(need_nebulize) - 1) + ")";
+						}
 					}
 				}
 			}
@@ -1049,7 +1058,7 @@ experiment dengue_propagation type: gui until: (cycle >= max_cycles and end_simu
 }
 
 
-experiment long_headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 50 {
+experiment long_headless_dengue_propagation type: batch keep_seed: true until: (cycle >= max_cycles or end_simulation) repeat: 70 {
 	//
 	parameter "Type of execution" var: run_batch category: "bool" init: true;
 	parameter "Start Date" var: start_date_str category: "string" init: "2020-05-08";

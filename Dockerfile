@@ -1,5 +1,4 @@
-# Recomendado para Mac M4
-FROM python:3.12-slim AS python-base
+FROM --platform=linux/amd64 python:3.12-slim AS python-base
 
 # Set work directory
 WORKDIR /app
@@ -33,11 +32,7 @@ RUN apt-get update && \
 
 # Install cppzmq (header-only library)
 # Instalar cppzmq (headers-only)
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends git && \
-    git clone https://github.com/zeromq/cppzmq.git /tmp/cppzmq && \
-    cp /tmp/cppzmq/zmq.hpp /usr/include && \
-    rm -rf /tmp/cppzmq
+RUN wget https://raw.githubusercontent.com/zeromq/cppzmq/master/zmq.hpp -O /usr/include/zmq.hpp
 
 # Add PostgreSQL 16 APT repository and install PostgreSQL 16 and PostGIS 3
 RUN apt-get update && \
@@ -105,22 +100,38 @@ RUN mkdir -p /external-libs/gama && \
 
 RUN chmod -R 777 /external-libs/gama/headless
 
-# Increase GAMA JVM memory to 12GB
+# Increase GAMA JVM memory to 16GB for large experiments
 RUN sed -i 's/-Xms8192m/-Xms12288m/g' /external-libs/gama/Gama.ini && \
     sed -i 's/-Xmx8192m/-Xmx12288m/g' /external-libs/gama/Gama.ini && \
-    sed -i 's/-Xmn2048m/-Xmn4096m/g' /external-libs/gama/Gama.ini && \
+    sed -i 's/-Xmn2048m/-Xmn8192m/g' /external-libs/gama/Gama.ini && \
     sed -i 's/-Xms8192m/-Xms12288m/g' /external-libs/gama/headless/gama-headless.sh
 
-# Download and extract Boost 1.90.0 to /opt
-RUN wget -q https://archives.boost.io/release/1.90.0/source/boost_1_90_0.tar.gz -O /tmp/boost_1_90_0.tar.gz && \
-    mkdir -p /opt && \
+# Optional local archives: docker-build-deps/ is included by COPY . . above.
+# Single RUN reads /app/docker-build-deps directly (avoids stale layer cache where /tmp had only Boost).
+RUN mkdir -p /opt && \
+    DEPS=/app/docker-build-deps && \
+    if [ -d "$DEPS" ]; then echo "[docker] docker-build-deps:"; ls -la "$DEPS" || true; fi && \
+    if [ -f "$DEPS/boost_1_90_0.tar.gz" ]; then \
+    echo "[docker] Using local $DEPS/boost_1_90_0.tar.gz"; \
+    tar -xzf "$DEPS/boost_1_90_0.tar.gz" -C /opt; \
+    else \
+    echo "[docker] Downloading Boost 1.90.0..."; \
+    wget -q https://archives.boost.io/release/1.90.0/source/boost_1_90_0.tar.gz -O /tmp/boost_1_90_0.tar.gz && \
     tar -xzf /tmp/boost_1_90_0.tar.gz -C /opt && \
-    rm /tmp/boost_1_90_0.tar.gz
-
-# Download and extract LEMON 1.3.1 to /opt
-RUN wget -q http://lemon.cs.elte.hu/pub/sources/lemon-1.3.1.zip -O /tmp/lemon-1.3.1.zip && \
+    rm -f /tmp/boost_1_90_0.tar.gz; \
+    fi && \
+    if [ -f "$DEPS/lemon-1.3.1.zip" ]; then \
+    echo "[docker] Using local $DEPS/lemon-1.3.1.zip"; \
+    unzip -q "$DEPS/lemon-1.3.1.zip" -d /opt; \
+    elif [ -f "$DEPS/lemon-1.3.1.tar.gz" ]; then \
+    echo "[docker] Using local $DEPS/lemon-1.3.1.tar.gz"; \
+    tar -xzf "$DEPS/lemon-1.3.1.tar.gz" -C /opt; \
+    else \
+    echo "[docker] Downloading LEMON 1.3.1..."; \
+    wget -q http://lemon.cs.elte.hu/pub/sources/lemon-1.3.1.zip -O /tmp/lemon-1.3.1.zip && \
     unzip -q /tmp/lemon-1.3.1.zip -d /opt && \
-    rm /tmp/lemon-1.3.1.zip
+    rm -f /tmp/lemon-1.3.1.zip; \
+    fi
 
 # Build and install LEMON from source
 WORKDIR /opt/lemon-1.3.1

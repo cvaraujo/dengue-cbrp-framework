@@ -412,7 +412,11 @@ def case_in_one_block(row: pd.Series, coord_blocks: List):
 def get_city_info(city: str):
     if city == "Alto Santo, Ceará, Brasil":
         return "ALTO SANTO", "Alto Santo, Ceará, Brasil"
-    return "LIMOEIRO", "Limoeiro do Norte, Ceará, Brasil"
+    if city == "Guaratiba, Rio de Janeiro, Brasil":
+        return "GT", "Guaratiba, Rio de Janeiro, Brasil"
+    if city == "Limoeiro do Norte, Ceará, Brasil":
+        return "LIMOEIRO", "Limoeiro do Norte, Ceará, Brasil"
+    raise ValueError(f"City '{city}' deu erro")
 
 
 def build_shapefile_path(city_key: str, map_size: int) -> str:

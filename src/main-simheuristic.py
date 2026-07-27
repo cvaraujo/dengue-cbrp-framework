@@ -18,7 +18,7 @@ default_as_sim_params = {
 }
 
 default_lm_sim_params = {
-    "people_per_km2": 0.003,
+    "people_per_km2": 0.004,
     "mosquitoes_per_person": 1.0,
     "nb_breeding_sites": 300,
     "proportion_infected_mosquitoes_without_cases": 0.2,
@@ -26,9 +26,19 @@ default_lm_sim_params = {
     "num_scenarios_evaluation": 20,
 }
 
+default_gt_sim_params = {
+    "people_per_km2": 0.00117, 
+    "mosquitoes_per_person": 0.5,
+    "nb_breeding_sites": 720,
+    "proportion_infected_mosquitoes_without_cases": 0.125,
+    "proportion_infected_mosquitoes_with_cases": 0.5,
+    "num_scenarios_evaluation": 20,
+}
+
 city_info_map = {
     "AS": "Alto Santo, Ceará, Brasil",
     "LM": "Limoeiro do Norte, Ceará, Brasil",
+    "GT": "Guaratiba, Rio de Janeiro, Brasil",
 }
 
 default_connection_params = {
@@ -51,27 +61,24 @@ default_connection_params = {
 }
 
 BATCH_DATES = {
-    "AS": [
-        ("2017-01-01", "2017-01-08"),
-        ("2017-01-08", "2017-01-15"),
-        ("2017-01-15", "2017-01-22"),
-        ("2017-01-22", "2017-01-29"),
-        ("2017-01-01", "2017-01-29"),
-    ],
-    "LM": [
-        ("2020-06-21", "2020-06-28"),
-        ("2020-07-05", "2020-07-12"),
-        ("2020-07-12", "2020-07-19"),
-        ("2020-07-19", "2020-07-26"),
-        ("2020-07-05", "2020-07-26"),
-    ],
+    # "LM": [
+    #     ("2020-06-28", "2020-07-05"),
+    #     ("2020-07-05", "2020-07-12"),
+    #     ("2020-07-19", "2020-07-26"),
+    #     ("2020-07-05", "2020-07-26"),
+    # ],
+    "GT": [
+        ("2024-02-26", "2024-03-03"), #  gráfico
+        ("2024-01-28", "2024-02-03"), #  Emily
+       
+    ]
 }
 
 BATCH_PARAMS = {
     "alphas": [0.8],
-    "map_sizes": [700, 1000, 1500, 2000],
-    "max_iters_with_surrogate": [100, 500],
-    "runtime": 1800,
+    "map_sizes": [5000],
+    "max_iters_with_surrogate": [100],
+    "runtime": 120,
     "elite_size": 5,
     "stochastic_evaluation": "default",
     "objective_function": "FULL",
@@ -84,8 +91,16 @@ def run_single_experiment(
     max_run_time, elite_size, max_iters, stochastic_evaluation,
     objective_function, output_folder, default_route_time="1200"
 ):
-    sim_params = default_as_sim_params if city == "AS" else default_lm_sim_params
-    city_name = city_info_map.get(city, "Limoeiro do Norte, Ceará, Brasil")
+    if city == "AS":
+        sim_params = default_as_sim_params
+    elif city == "LM":
+        sim_params = default_lm_sim_params
+    elif city == "GT":
+        sim_params = default_gt_sim_params
+    else:
+        logger.warning(f"Cidade {city} não reconhecida. Usando parâmetros padrão de Limoeiro.")
+        sim_params = default_lm_sim_params
+    city_name = city_info_map.get(city, "Guaratiba, Rio de Janeiro, Brasil")
     conn = default_connection_params[run_mode] if run_mode in default_connection_params else default_connection_params["docker"]
 
     run_params = {

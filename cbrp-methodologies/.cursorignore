@@ -1,0 +1,23 @@
+# Ignore everything by default
+*
+
+# Allow directory traversal
+!*/
+
+# Allow C++ source files
+!*.cpp
+!*.hpp
+!*.h
+!*.py
+!src/*
+!CMakeLists.txt
+
+# Allow Jupyter notebooks
+!*.ipynb
+
+# Re-ignore directories with third-party/generated C++ code
+.venv/
+__pycache__/
+.cache/
+CMakeFiles/
+renv/

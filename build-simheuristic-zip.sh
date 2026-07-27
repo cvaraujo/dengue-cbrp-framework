@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-CBRP_SRC="/Users/pedro/Documents/Mestrado/Pesquisa/Simulador-Otimizador/cbrp-methodologies"
+CBRP_SRC="/Users/pedro/Documents/Mestrado/Pesquisa/Simulador-Otimizador/dengue-cbrp-framework/cbrp-methodologies"
 OUTPUT_DIR="/Users/pedro/Documents/Mestrado/Pesquisa/Simulador-Otimizador/dengue-cbrp-framework/external-libs"
 ZIP_NAME="cbrp-simheuristic.zip"
 STAGING_DIR=$(mktemp -d)

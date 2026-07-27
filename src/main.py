@@ -61,8 +61,8 @@ if __name__ == "__main__":
     os.makedirs(output_folder, exist_ok=True)
     sim_metrics: SimulationMetrics = SimulationMetrics(output_folder=output_folder)
     
-    city: str = "Limoeiro do Norte, Ceará, Brasil"
-    map_size: int = 2000
+    city: str = "Guaratiba, Rio de Janeiro, Brasil"
+    map_size: int = 7000
     logger.info(f"[*] Loading OSM map: {city} ({map_size})...")
     osm: OpenStreetMap = OpenStreetMap(city, map_size)
 
@@ -72,7 +72,7 @@ if __name__ == "__main__":
     logger.info("[*] Retrieving dengue cases...")
     prev_date: str = sys.argv[2] #"2020-07-12"
     start_date: str = sys.argv[3] #"2020-07-19"
-    city_key: str = "LIMOEIRO"
+    city_key: str = "Rio de Janeiro"
     start_datetime = datetime.strptime(start_date, "%Y-%m-%d")
 
     db: PostgreSQLAdapter = PostgreSQLAdapter()

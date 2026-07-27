@@ -21,7 +21,11 @@ import pandas as pd
 def get_city_info(city: str):
     if city == "Alto Santo, Ceará, Brasil":
         return "ALTO SANTO", "alto-santo"
-    return "LIMOEIRO", "limoeiro"
+    if city == "Guaratiba, Rio de Janeiro, Brasil":
+        return "GT", "guaratiba"
+    if city == "Limoeiro do Norte, Ceará, Brasil":
+        return "LIMOEIRO", "limoeiro"
+    raise ValueError(f"City '{city}' is not supported")
 
 class Solution:
     def __init__(self, blocks: list[int], deterministic_of: float, stochastic_of: float):
@@ -261,14 +265,19 @@ class SimheuristicFramework:
 
     def _call_naive_optimization(self):
         speed_m_per_s: float = 10000 / 3600  # 10 km/h in m/s
+        valid_mask = getattr(self, "_valid_block_mask", None)
+
+        candidate_blocks: List[int] = [
+            b for b in range(self._graph.b)
+            if (valid_mask is None or valid_mask[b])
+        ]
+
         avg_cases_per_block: List[float] = [0.0] * self._graph.b
-        num_scenarios: int = len(self._scenarios)
-        for block in range(self._graph.b):
-            # block_cases: List[int] = [scenario[block] for scenario in self._scenarios]
-            avg_cases_per_block[block] = self._infected_per_block[block] #sum(block_cases) / num_scenarios
+        for block in candidate_blocks:
+            avg_cases_per_block[block] = self._infected_per_block[block]
 
         sorted_blocks_by_avg_cases: List[int] = sorted(
-            range(self._graph.b),
+            candidate_blocks,
             key=lambda b: avg_cases_per_block[b],
             reverse=True
         )
@@ -431,6 +440,35 @@ class SimheuristicFramework:
     def _compute_metrics(self):
         pass
 
+    def _compute_valid_block_mask(self) -> List[bool]:
+        """Mark blocks whose lat/lon polygon is non-degenerate.
+
+        GAML's `create_street_blocks_and_save` keeps only blocks where
+        `envelope(polygon).area > 0`, so any optimizer choice on a
+        degenerate block has no Building counterpart in GAML and used to
+        crash `load_blocks_to_nebulize` with IndexOutOfBounds. We mirror
+        that filter here (slightly stricter: actual polygon area, not
+        envelope) so the optimizer never sees those blocks as attractive
+        targets, and any leftover mismatch is absorbed by the GAML guard.
+        """
+        valid: List[bool] = [False] * self._graph.b
+        for block_index in range(self._graph.b):
+            if block_index not in self._graph.block_nodes:
+                continue
+            coords = [
+                (self._graph.nodes[j].lon, self._graph.nodes[j].lat)
+                for j in self._graph.block_nodes[block_index]
+            ]
+            if len(coords) < 3:
+                continue
+            try:
+                poly = Polygon(coords)
+                if poly.is_valid and poly.area > 0:
+                    valid[block_index] = True
+            except Exception as e:
+                logger.debug(f"[valid-mask] Polygon failed for block {block_index}: {e}")
+        return valid
+
     def _write_graph(self, filename: str):
         logger.info("[*] Writing graph...")
         with open(filename, "w") as file:
@@ -481,6 +519,27 @@ class SimheuristicFramework:
                 coord_blocks,
             )
         )
+
+        self._valid_block_mask: List[bool] = self._compute_valid_block_mask()
+        invalid_blocks_with_cases = [
+            i for i, inf in enumerate(self._infected_per_block)
+            if inf > 0 and not self._valid_block_mask[i]
+        ]
+        total_invalid = sum(1 for v in self._valid_block_mask if not v)
+        if invalid_blocks_with_cases:
+            dropped = sum(int(self._infected_per_block[i]) for i in invalid_blocks_with_cases)
+            logger.warning(
+                f"[!] Dropping {dropped} real cases from {len(invalid_blocks_with_cases)} blocks "
+                f"with degenerate polygons (no Building counterpart in GAMA): "
+                f"{invalid_blocks_with_cases[:20]}{'...' if len(invalid_blocks_with_cases) > 20 else ''}"
+            )
+            for i in invalid_blocks_with_cases:
+                self._infected_per_block[i] = 0
+        logger.info(
+            f"[*] Valid blocks: {self._graph.b - total_invalid}/{self._graph.b} "
+            f"(invalid/degenerate: {total_invalid})"
+        )
+
         logger.info(f"[*]Starting Num. Infected: {self._infected_per_block}")
         self._write_graph(os.path.join(self._output_folder, "graph.txt"))
 

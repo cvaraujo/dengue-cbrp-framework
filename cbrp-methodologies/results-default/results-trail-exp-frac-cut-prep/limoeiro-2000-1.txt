@@ -1,0 +1,24 @@
+N: 658
+M: 2016
+B: 79
+S: 0
+Alpha: 0.8
+LB: 11
+UB: 69
+Gurobi_Nodes: 33590
+Lazy_cuts: 2482
+Frac_cuts: 5404535
+Runtime: 4036.97
+Scenario: 0
+X: 181 221
+X: 220 613
+X: 221 228
+X: 228 658
+X: 613 181
+X: 658 220
+Y: 0
+Y: 66
+Y: 43
+Y: 20
+Y: 21
+Route_Time: 131

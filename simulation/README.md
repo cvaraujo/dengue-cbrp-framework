@@ -21,7 +21,18 @@
 
 3. Results and Analysis
 
-> [!IMPORTANT]
-> See the paper: [NotPublishedYet](https://www.ic.unicamp.br/~ra230261/) to see a complete analysis of this simulation.
-> 
-> TODO: how to cite.
+> See the paper: [Multi-agent simulation for dengue spread forecast: A case study for two Brazilian cities](https://www.sciencedirect.com/science/article/abs/pii/S0304380025004144) to see a complete analysis of this simulation.
+
+4. How to cite
+```bash
+@article{ARAUJO2026111428,
+title = {Multi-agent simulation for dengue spread forecast: A case study for two Brazilian cities},
+journal = {Ecological Modelling},
+volume = {513},
+pages = {111428},
+year = {2026},
+issn = {0304-3800},
+doi = {https://doi.org/10.1016/j.ecolmodel.2025.111428},
+url = {https://www.sciencedirect.com/science/article/pii/S0304380025004144},
+author = {Carlos Victor Dantas Araújo and Fábio Luiz Usberti and Emily Brito {de Oliveira} and Laura Silva {de Assis} and Celso Cavellucci}}
+```
