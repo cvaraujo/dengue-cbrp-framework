@@ -503,6 +503,14 @@ class SimheuristicFramework:
         osm = OpenStreetMap(city_osm_name, map_size)
         self._graph: Graph = MapAdapter.convert_osm_to_graph(osm, True)
 
+        plot_path = MapAdapter.plot_region_map(
+            map_data=osm.osm_map,
+            output_dir=self._output_folder,
+            filename="osm_region_validation.png",
+            show=False,
+        )
+        logger.info(f"[*] OSM validation plot saved to: {plot_path}")
+
         logger.info("[*] Retrieving dengue cases...")
         cases = self._db.get_notifications_between_dates(start_date, end_date, city)
         logger.info("[*] Processing blocks and population data...")
