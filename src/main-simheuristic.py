@@ -66,23 +66,22 @@ BATCH_DATES = {
     #     ("2020-07-05", "2020-07-12"),
     #     ("2020-07-19", "2020-07-26"),
     #     ("2020-07-05", "2020-07-26"),
+    #     ("2024-01-28", "2024-02-03"), #  Emily
     # ],
     "GT": [
         ("2024-02-26", "2024-03-03"), #  gráfico
-        ("2024-01-28", "2024-02-03"), #  Emily
-       
     ]
 }
 
 BATCH_PARAMS = {
     "alphas": [0.8],
-    "map_sizes": [5000],
+    "map_sizes": [2600,2700],
     "max_iters_with_surrogate": [100],
-    "runtime": 120,
+    "runtime": 720,
     "elite_size": 5,
     "stochastic_evaluation": "default",
     "objective_function": "FULL",
-    "default_route_time": "1200",
+    "default_route_time": "7200",
 }
 
 

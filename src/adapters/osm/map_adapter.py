@@ -1,5 +1,9 @@
 import os, copy
 import osmnx as ox
+import geopandas as gpd
+import matplotlib.pyplot as plt
+import networkx as nx
+from shapely.geometry import Polygon, MultiPolygon
 from domain.osm import *
 from domain.graph import *
 from domain.utils import *
@@ -31,6 +35,47 @@ class MapAdapter:
         except Exception as e:
             print("[!!!] Error to write the shapefiles:", e)
             return False
+
+    @staticmethod
+    def plot_region_map(
+        map_data,
+        output_dir: str,
+        filename: str = "osm_region_validation.png",
+        show: bool = False,
+    ) -> str:
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, filename)
+
+        if isinstance(map_data, nx.MultiDiGraph):
+            fig, ax = ox.plot_graph(
+                map_data,
+                show=False,
+                close=False,
+                bgcolor="white",
+                node_size=0,
+                edge_linewidth=0.8,
+                edge_color="#1f77b4",
+            )
+        elif isinstance(map_data, (Polygon, MultiPolygon)):
+            fig, ax = plt.subplots(figsize=(10, 10))
+            gpd.GeoSeries([map_data]).plot(
+                ax=ax,
+                facecolor="#a6cee3",
+                edgecolor="#1f78b4",
+                linewidth=1.2,
+            )
+            ax.set_aspect("equal")
+        else:
+            raise TypeError(
+                "map_data must be an OSM graph (networkx.MultiDiGraph) or a shapely Polygon/MultiPolygon."
+            )
+
+        ax.set_axis_off()
+        fig.savefig(output_path, dpi=300, bbox_inches="tight")
+        if show:
+            plt.show()
+        plt.close(fig)
+        return output_path
 
     @staticmethod
     def convert_osm_to_graph(osm: OpenStreetMap, always_two_ways: bool) -> Graph:
