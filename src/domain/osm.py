@@ -22,7 +22,31 @@ class OpenStreetMap:
         self.lon: float = 0.0
 
         try:
-            self.osm_map = ox.graph_from_address(query, radius, simplify=True)
+            # Tentando tirar a região de bosque em Guaratiba
+            if "Guaratiba" in query:
+                print(f"Fetching urban area for {query} excluding forests...")
+                guaratiba_gdf = ox.geocode_to_gdf(query)
+                guaratiba_poly = guaratiba_gdf.geometry.iloc[0]
+                tags = {
+                    "natural": "wood", 
+                    "landuse": ["forest", "conservation"], 
+                    "boundary": ["protected_area", "national_park", "forest"]
+                }
+                try:
+                    forests_gdf = ox.features_from_place(query, tags)
+                    if not forests_gdf.empty:
+                        forests_union = forests_gdf.unary_union
+                        urban_poly = guaratiba_poly.difference(forests_union)
+                    else:
+                        urban_poly = guaratiba_poly
+                except Exception as e:
+                    print(f"Could not filter forests, using full polygon: {e}")
+                    urban_poly = guaratiba_poly
+                
+                self.osm_map = ox.graph_from_polygon(urban_poly, simplify=True)
+            else:
+                self.osm_map = ox.graph_from_address(query, radius, simplify=True)
+#-------------------------------------------------------------------------------------
         except Exception as e:
             print(f"Error to load the map: {e}")
 

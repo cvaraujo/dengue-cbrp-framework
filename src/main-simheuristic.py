@@ -70,13 +70,13 @@ BATCH_DATES = {
     # ],
     "GT": [
         ("2024-02-26", "2024-03-03"), #  gráfico
-        ("2024-02-03", "2024-02-10"), #  Emily
+        #("2024-02-03", "2024-02-10"), #  Emily
     ]
 }
 
 BATCH_PARAMS = {
     "alphas": [0.8],
-    "map_sizes": [2600,2700],
+    "map_sizes": [2500],
     "max_iters_with_surrogate": [100],
     "runtime": 720,
     "elite_size": 5,
